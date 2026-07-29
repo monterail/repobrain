@@ -7,7 +7,8 @@ wprost do `CLAUDE.md`. Rozjazd między nimi jest niemożliwy dłużej niż jeden
 regeneruje i porównuje — tak jak check lockfile'a.
 
 Dystrybucja dwiema ścieżkami z jednego repo: **plugin Claude Code** (skille + komendy dla zespołu)
-oraz **CLI przez `npx`** (bramki w GitHub Actions, bez zależności od Claude Code).
+oraz **CLI uruchamiane wprost przez `node`** (bramki w GitHub Actions, bez zależności
+od Claude Code i bez menedżera pakietów — kit nie ma żadnych zależności).
 
 ---
 
@@ -57,7 +58,7 @@ To jest podział, z którego wynika wszystko poniżej.
 │  docs/specs/            kontrakt implementacyjny             │
 │                                                              │
 └──────────────────────────┬───────────────────────────────────┘
-                           │   npx … index
+                           │   knowledge.mjs index
                            ▼
 ┌─ DERYWATA (maszyna generuje, NIKT nie edytuje ręcznie) ─────┐
 │                                                              │
@@ -65,7 +66,7 @@ To jest podział, z którego wynika wszystko poniżej.
 │              tabela aktywnych decyzji + lista odwróconych    │
 │                                                              │
 └──────────────────────────┬───────────────────────────────────┘
-                           │   npx … check  (bramka index-fresh)
+                           │   knowledge.mjs check  (bramka index-fresh)
                            ▼
               rozjazd = czerwony PR, nie da się zmergować
 ```
@@ -90,7 +91,7 @@ Reguła pierwszeństwa, którą instalator dopisuje do `CLAUDE.md`:
 | Wybór, które drafty DEC zastosować | **człowiek** | krok 4 `/transcript-extract` |
 | Wybór `Odwraca:` vs `Zmienia:` | **człowiek** | gdy decyzja dotyka wcześniejszej |
 | Wyliczenie statusu (aktywna / odwrócona) | maszyna (`lib/status.mjs`) | przy każdym `index` i `check` |
-| Wygenerowanie tabeli w `CLAUDE.md` | maszyna (`npx … index`) | po każdej edycji `DECISIONS.md` |
+| Wygenerowanie tabeli w `CLAUDE.md` | maszyna (`knowledge.mjs index`) | po każdej edycji `DECISIONS.md` |
 | Uruchomienie `index` | **człowiek** (lokalnie, przed commitem) | po edycji `DECISIONS.md` |
 | Sprawdzenie, czy `CLAUDE.md` jest świeży | maszyna (bramka `index-fresh`) | każdy PR i push na `main` |
 | Sprawdzenie kompletności wpisów | maszyna (bramka `integrity`) | każdy PR i push na `main` |
@@ -118,7 +119,15 @@ Sześć kroków, ~15 minut. Kroki 1–5 są obowiązkowe, krok 6 (plugin Claude 
 | uprawnienia **admina** do repo | branch protection (krok 4) | Settings → Branches jest widoczne |
 | `gh` CLI (opcjonalnie) | szybsze ustawienie branch protection | `gh auth status` |
 
-Kit nie ma zależności runtime'owych — `npx` ściąga sam kod repoBrain i nic poza tym.
+Kit nie ma **żadnych** zależności — ani runtime'owych, ani deweloperskich. Uruchamia się
+go wprost przez `node`, bez `npm install` i bez `npx`.
+
+> **Dlaczego nie `npx github:…`.** Wcześniejsze wersje tej instrukcji używały
+> `npx --yes github:monterail/repobrain#<SHA>`. Ta droga **wywala się w GitHub Actions**
+> błędem `GitFetcher requires an Arborist constructor` — to defekt npm 10.x, czyli
+> dokładnie tej wersji, którą `actions/setup-node` instaluje razem z node 20 i 22.
+> Ponieważ kit nie ma zależności, npm był w tym łańcuchu wyłącznie pośrednikiem:
+> usunięcie go naprawia błąd i skraca joba. Szczegóły w [§13](#13-rozwój-kitu).
 
 ### Krok 1 — ustal pełny SHA
 
@@ -135,10 +144,18 @@ Zapisz go sobie — pojawi się w trzech miejscach. Dalej oznaczam go jako `<SHA
 
 ### Krok 2 — uruchom instalator
 
+Pobierz kit po ustalonym SHA i uruchom instalator w katalogu swojego projektu:
+
 ```bash
+git clone https://github.com/monterail/repobrain.git ~/.repobrain
+git -C ~/.repobrain checkout <SHA>
+
 cd /ścieżka/do/projektu
-npx --yes github:monterail/repobrain#<SHA> init
+node ~/.repobrain/bin/knowledge.mjs init
 ```
+
+CLI zawsze działa na **bieżącym katalogu roboczym**, niezależnie od tego, skąd
+uruchomiłeś plik — dlatego kit może mieszkać gdziekolwiek.
 
 Z pluginem Claude Code równoważnie: `/knowledge-init`.
 
@@ -155,7 +172,7 @@ bez osobnego trybu „retrofit".
 | Plik | Zawartość | Jeśli już istnieje |
 |---|---|---|
 | `docs/DECISIONS.md` | opis formatu + `DEC-001` jako działający przykład | pomijany w całości |
-| `.github/workflows/knowledge.yml` | workflow wołający `npx` z pinem po SHA | pomijany w całości |
+| `.github/workflows/knowledge.yml` | workflow ściągający kit przez `actions/checkout` z pinem po SHA | pomijany w całości |
 | `CLAUDE.md` | reguła pierwszeństwa + pusta para znaczników | **dopisywany na końcu**, nie nadpisywany |
 
 Jeśli `CLAUDE.md` już zawiera znaczniki `WYGENEROWANE:decyzje`, instalator też ich nie
@@ -173,25 +190,41 @@ kit ma likwidować.
 
 Instalator nie może ich zgadnąć. **Dopóki tego nie zrobisz, część bramek jest wyłączona.**
 
-Otwórz `.github/workflows/knowledge.yml` i podmień ostatnią linię:
+Otwórz `.github/workflows/knowledge.yml` i podmień trzy wartości:
 
 ```yaml
 # PRZED (prosto z instalatora)
-- run: npx --yes github:monterail/repobrain#<PELNY_SHA> check
-       --paths 'docs/specs/**,**/pricing*'
-       --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>'
+      - uses: actions/checkout@v4
+        with:
+          repository: monterail/repobrain
+          ref: <PELNY_SHA>                    # ①
+          path: .repobrain
+      …
+      - run: node .repobrain/bin/knowledge.mjs check
+             --paths 'docs/specs/**,**/pricing*'                                  # ②
+             --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>' # ③
 
 # PO (uzupełnione)
-- run: npx --yes github:monterail/repobrain#85d7898f… check
-       --paths 'docs/specs/**,docs/api-contract.md,**/pricing*'
-       --client-names 'Nowak, Wiśniewska'
+      - uses: actions/checkout@v4
+        with:
+          repository: monterail/repobrain
+          ref: 85d7898f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d
+          path: .repobrain
+      …
+      - run: node .repobrain/bin/knowledge.mjs check
+             --paths 'docs/specs/**,docs/api-contract.md,**/pricing*'
+             --client-names 'Nowak, Wiśniewska'
 ```
 
 | # | Co | Konsekwencja pominięcia |
 |---|---|---|
-| 1 | **`<PELNY_SHA>`** → SHA z kroku 1 | workflow wywali się na nieistniejącej referencji |
-| 2 | **`--paths`** → ścieżki decyzyjne tego projektu | bramka `decision-required` nie chroni niczego |
-| 3 | **`--client-names`** → nazwiska osób decyzyjnych po stronie klienta | `integrity` nigdy nie wymaga `Źródło:` dla decyzji klienta |
+| ① | **`ref:`** → pełny SHA z kroku 1 | checkout wywali się na nieistniejącej referencji |
+| ② | **`--paths`** → ścieżki decyzyjne tego projektu | bramka `decision-required` nie chroni niczego |
+| ③ | **`--client-names`** → nazwiska osób decyzyjnych po stronie klienta | `integrity` nigdy nie wymaga `Źródło:` dla decyzji klienta |
+
+> **Nie zmieniaj kolejności kroków.** Checkout projektu musi być pierwszy: `actions/checkout`
+> domyślnie czyści katalog docelowy przez `git clean -ffdx`, więc odwrotna kolejność
+> skasowałaby ściągnięty wcześniej kit.
 
 **Jak dobrać `--paths`.** Zacznij **wąsko**: `docs/specs/**` i pliki cenowe. Nie dodawaj
 katalogu migracji na starcie — większość migracji nie ma za sobą decyzji klienckiej,
@@ -247,7 +280,7 @@ JSON
 ### Krok 5 — pierwsza generacja i commit
 
 ```bash
-npx --yes github:monterail/repobrain#<SHA> index
+node ~/.repobrain/bin/knowledge.mjs index
 ```
 
 ```
@@ -267,7 +300,7 @@ git commit -m "chore: instalacja repoBrain"
 Uruchom bramki lokalnie, dokładnie tak, jak zrobi to CI:
 
 ```bash
-npx --yes github:monterail/repobrain#<SHA> check \
+node ~/.repobrain/bin/knowledge.mjs check \
   --paths 'docs/specs/**' --client-names 'Nowak'
 ```
 
@@ -282,7 +315,7 @@ próbny PR dotykający ścieżki decyzyjnej i zobacz, czy zapali się na czerwon
 
 Checklista po instalacji:
 
-- [ ] `npx … check` lokalnie zielone
+- [ ] `knowledge.mjs check` lokalnie zielone
 - [ ] workflow przeszedł na pierwszym PR (zakładka Actions)
 - [ ] w logu CI **nie ma** komunikatu o wyłączonej regule `--client-names`
 - [ ] w logu CI bramka `decision-required` jest w „zielonych", nie w „pominiętych"
@@ -301,14 +334,13 @@ Najprostsza droga dzisiaj: skopiuj zawartość `.claude-plugin/` do katalogu `.c
 projektu docelowego i zacommituj — skille i komendy działają wtedy dla całego zespołu:
 
 ```bash
-git clone https://github.com/monterail/repobrain.git /tmp/repobrain
 mkdir -p .claude/skills .claude/commands
-cp -r /tmp/repobrain/.claude-plugin/skills/* .claude/skills/
-cp -r /tmp/repobrain/.claude-plugin/commands/* .claude/commands/
+cp -r ~/.repobrain/.claude-plugin/skills/* .claude/skills/
+cp -r ~/.repobrain/.claude-plugin/commands/* .claude/commands/
 ```
 
-W skopiowanych plikach podmień `<PELNY_SHA>` na SHA z kroku 1 — komendy wołają CLI
-z tym samym pinem co workflow.
+W skopiowanych plikach podmień `<SCIEZKA_DO_KITU>` na miejsce, w którym trzymasz kit
+(np. `~/.repobrain`) — komendy wołają to samo CLI, co Ty z ręki.
 
 > Repo nie ma jeszcze `.claude-plugin/marketplace.json`, więc instalacja przez
 > `/plugin marketplace add` nie zadziała. To znany brak, nie błąd konfiguracji po Twojej stronie.
@@ -316,9 +348,19 @@ z tym samym pinem co workflow.
 ### Aktualizacja kitu
 
 Poprawka w repoBrain nie propaguje się sama — pin po SHA jest tego świadomym kosztem.
-Żeby podnieść wersję w projekcie: weź nowy SHA (krok 1), podmień go w
-`.github/workflows/knowledge.yml` oraz w skopiowanych komendach, zrób PR. Zielony build
-na tym PR jest potwierdzeniem, że nowa wersja nie psuje istniejących wpisów.
+Żeby podnieść wersję w projekcie: weź nowy SHA (krok 1), podmień `ref:` w
+`.github/workflows/knowledge.yml`, zrób PR. Zielony build na tym PR jest potwierdzeniem,
+że nowa wersja nie psuje istniejących wpisów.
+
+Lokalnie odśwież swoją kopię kitu do tego samego SHA:
+
+```bash
+git -C ~/.repobrain fetch && git -C ~/.repobrain checkout <NOWY_SHA>
+```
+
+**SHA w CI jest źródłem prawdy, kopia lokalna to wygoda.** Jeśli się rozjadą, bramka
+`index-fresh` to wyłapie — wygenerujesz blok starszą wersją, a CI porówna go z wynikiem
+nowszej. Rozjazd nie przejdzie po cichu.
 
 ---
 
@@ -347,7 +389,7 @@ surowy zapis (PDF / VTT, nazwa od dostawcy)
    │
 [4] człowiek wybiera, co zastosować
    │   → dopisanie na końcu docs/DECISIONS.md
-   │   → npx … index
+   │   → knowledge.mjs index
    │   → commit obu plików
    ▼
 ```
@@ -387,8 +429,22 @@ automatycznie, gdy piszesz lub edytujesz wpis, i pilnuje formatu, zanim zrobi to
 Po każdej ścieżce ten sam finał:
 
 ```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> index
+node ~/.repobrain/bin/knowledge.mjs index
 git add docs/DECISIONS.md CLAUDE.md && git commit
+```
+
+Żeby nie przepisywać ścieżki po każdej edycji, dodaj alias w projekcie —
+w `package.json`:
+
+```json
+"scripts": { "knowledge:index": "node ~/.repobrain/bin/knowledge.mjs index" }
+```
+
+albo w `Makefile`, jeśli projekt nie jest nodowy:
+
+```make
+knowledge-index:
+	node ~/.repobrain/bin/knowledge.mjs index
 ```
 
 ---
@@ -576,6 +632,11 @@ Najnowsze pierwsze. Generator **nigdy nie dopisuje bloku na końcu pliku** — j
 znaczników nie ma, odmawia i każe uruchomić `init`. Blok, który ktoś przesunął albo
 zduplikował, kończy się błędem „napraw ręcznie", nie cichym nadpisaniem.
 
+> Treść znacznika jest **dopasowywana dosłownie**, więc zdanie „Uruchom: npx … index"
+> zostaje w nim mimo zmiany sposobu uruchamiania (§4). Podmiana tego napisu zerwałaby
+> parowanie znaczników w każdej istniejącej instalacji — koszt nieproporcjonalny
+> do kosmetycznego zysku. Aktualne polecenie to `node <kit>/bin/knowledge.mjs index`.
+
 ---
 
 ## 9. Bramki CI
@@ -589,7 +650,7 @@ Workflow `.github/workflows/knowledge.yml` odpala się na `pull_request`
 | Bramka | Co sprawdza | Kiedy blokuje | Jak naprawić |
 |---|---|---|---|
 | `integrity` | kompletność wpisów, poprawność relacji, placeholdery, istnienie plików z `Źródło:`, `Źródło:` dla decyzji klienta | zawsze | popraw wpis w `DECISIONS.md` |
-| `index-fresh` | czy blok w `CLAUDE.md` = regeneracja z `DECISIONS.md` | zawsze | `npx … index` i zacommituj |
+| `index-fresh` | czy blok w `CLAUDE.md` = regeneracja z `DECISIONS.md` | zawsze | `knowledge.mjs index` i zacommituj |
 | `decision-required` | czy PR ruszający ścieżki decyzyjne dotyka `DECISIONS.md` | tylko w kontekście PR i tylko gdy podano `--paths` | dopisz wpis DEC albo etykietę `no-decision` |
 
 Bramki pominięte są **wypisywane w logu**, np.:
@@ -624,8 +685,12 @@ na nieistniejący transkrypt; **wstecz** audyt ostrzega, że coś z rozmowy wypa
 ## 10. Komendy CLI
 
 ```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> <init|index|check> [flagi]
+node <ścieżka-do-kitu>/bin/knowledge.mjs <init|index|check> [flagi]
 ```
+
+Zero zależności, więc żadnego `npm install` ani `npx` — wystarczy `node ≥ 20`
+i katalog z kitem sklonowany po ustalonym SHA. CLI zawsze operuje na **bieżącym
+katalogu roboczym**, nie na katalogu kitu.
 
 | Komenda | Flagi | Działanie |
 |---|---|---|
@@ -650,7 +715,7 @@ spec bez tego przydziału powtarzałby błąd, który opisuje.
 |---|---|---|
 | po każdym callu z klientem | właściciel | `/transcript-extract`, akceptacja draftów |
 | przy każdym PR w ścieżkach decyzyjnych | autor PR-a | wpis DEC albo świadoma etykieta |
-| po każdej edycji `DECISIONS.md` | autor | `npx … index`, commit obu plików |
+| po każdej edycji `DECISIONS.md` | autor | `knowledge.mjs index`, commit obu plików |
 | raz na sprint | właściciel | `/knowledge-audit`, przegląd użyć furtki |
 | gdy furtka rośnie | właściciel | zawężenie albo rozszerzenie ścieżek decyzyjnych |
 
@@ -678,7 +743,7 @@ do repo jest człowiek. Dlatego rola jest przypisana, a nie dorozumiana.
 - **Nie parsuje surowych PDF-ów w CI.** To zadanie dla agenta z człowiekiem w pętli.
 - **Nie migruje istniejących repo.** Instalator nie nadpisuje, więc retrofit jest możliwy
   później, ale konwersja formatu starych wpisów nie jest zbudowana ani przetestowana.
-- **Nie działa offline.** Workflow ściąga kod przez `npx` z GitHuba. Ryzyko rezydualne
+- **Nie działa offline.** Workflow ściąga kod kitu z GitHuba przez `actions/checkout`. Ryzyko rezydualne
   zapisane świadomie: przy awarii GitHuba merge'e stają, a `continue-on-error: true`
   dodane pod presją deadline'u ma tendencję do pozostawania na zawsze.
 
@@ -698,6 +763,30 @@ lib/init.mjs          plan instalacji (czysta funkcja)
 templates/            szablony kopiowane przez `init`
 .claude-plugin/       komendy i skille pluginu Claude Code
 ```
+
+### Dlaczego kit nie przechodzi przez npm
+
+Pierwotna instrukcja instalacji używała `npx --yes github:monterail/repobrain#<SHA>`.
+W GitHub Actions ta droga **wywala się zawsze**:
+
+```
+npm error GitFetcher requires an Arborist constructor to pack a tarball
+```
+
+To defekt npm 10.x — czyli dokładnie tej wersji, którą `actions/setup-node` instaluje
+razem z node 20 i 22. Nie zależy od wersji node'a, więc podniesienie node'a nie pomaga.
+Na maszynach z npm ≥ 11 to samo polecenie działa i **dlatego błąd przeszedł
+przez weryfikację przy projektowaniu**: wykonalność sprawdzono lokalnie, choć jedynym
+środowiskiem, w którym to polecenie miało realnie biec, było CI.
+
+Poprawka usuwa przyczynę zamiast obchodzić objaw: kit **nie ma żadnych zależności**,
+więc npm nie miał tu nic do zrobienia — był czystym pośrednikiem między `git clone`
+a `node`. Workflow ściąga go teraz przez `actions/checkout` z tym samym pinem po SHA
+i uruchamia bezpośrednio. Pin i jego gwarancje zostają bez zmian, znika jedno ogniwo
+i kilkanaście sekund joba.
+
+**Lekcja ogólniejsza:** weryfikacja wykonana w innym środowisku niż docelowe nie jest
+weryfikacją. Zgłoszone przez użytkownika, 2026-07-29.
 
 **Niezmiennik architektoniczny:** `lib/` nie może zależeć ani od API Claude Code,
 ani od API GitHub Actions. Naruszenie wyłączyłoby kit w CI — czyli w jedynym miejscu,

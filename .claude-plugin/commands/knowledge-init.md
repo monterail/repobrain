@@ -8,8 +8,12 @@ Zainstaluj repoBrain w tym repozytorium.
 ## Krok 1 — uruchom instalator
 
 ```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> init
+node <SCIEZKA_DO_KITU>/bin/knowledge.mjs init
 ```
+
+Kit nie ma zależności — uruchamia się wprost przez `node`, bez `npm` i bez `npx`.
+Jeśli nie masz go lokalnie: `git clone https://github.com/monterail/repobrain.git ~/.repobrain`
+i `git -C ~/.repobrain checkout <PELNY_SHA>`.
 
 Instalator nigdy nie nadpisuje istniejących plików. Raportuje, co dołożył (`+`),
 a co pominął (`=`).
@@ -20,8 +24,8 @@ a co pominął (`=`).
    `docs/specs/**` i pliki cenowe. Nie dodawaj katalogu migracji na starcie: większość
    migracji nie ma za sobą decyzji klienckiej, a złapanie ich zamieni etykietę
    `no-decision` w odruch.
-2. **Pełny SHA** repoBrain w tym samym pliku. Nigdy tag — tagi gita są mutowalne,
-   a to zdalny kod wykonywany w CI.
+2. **Pełny SHA** repoBrain w polu `ref:` kroku `actions/checkout` w tym samym pliku.
+   Nigdy tag — tagi gita są mutowalne, a to zdalny kod wykonywany w CI.
 3. **Branch protection**: „require branches to be up to date before merging". Bez tego
    dwa PR-y mogą dodać ten sam numer DEC i auto-zmergować się, psując `main`.
 4. **Nazwiska klienta** we fladze `--client-names` w tym samym pliku. Bez tego bramka
@@ -31,7 +35,7 @@ a co pominął (`=`).
 ## Krok 3 — pierwsza generacja
 
 ```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> index
+node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index
 ```
 
 Zacommituj `docs/DECISIONS.md` i `CLAUDE.md` razem.

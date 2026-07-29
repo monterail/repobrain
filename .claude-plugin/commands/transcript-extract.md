@@ -68,5 +68,5 @@ Jeśli decyzja modyfikuje wcześniejszą — dobierz `Odwraca:` albo `Zmienia:` 
 
 **Nie zapisuj niczego poza podsumowaniem z kroku 1 bez zgody użytkownika.**
 Pokaż drafty, zapytaj, które zastosować. Po akceptacji dopisz je na końcu
-`docs/DECISIONS.md`, uruchom `npx --yes github:monterail/repobrain#<PELNY_SHA> index`
+`docs/DECISIONS.md`, uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index`
 i pokaż, co się zmieniło.

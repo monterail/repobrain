@@ -12,17 +12,32 @@ jobs:
   knowledge:
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout i actions/setup-node pinujemy po tagu SWIADOMIE —
-      # to oficjalne akcje GitHuba (inny model zaufania niz zdalny kod z
-      # `npx --yes`, ktory ponizej pinujemy po pelnym SHA).
+      # Checkout projektu MUSI byc pierwszy. actions/checkout domyslnie czysci
+      # katalog docelowy (`git clean -ffdx`), wiec odwrotna kolejnosc skasowalaby
+      # sciagniety wczesniej kit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Kit sciagany przez checkout, NIE przez `npx github:…`. npm 10.x — czyli
+      # to, co setup-node instaluje razem z node 20 i 22 — wywala sie na tym
+      # specyfikatorze bledem `GitFetcher requires an Arborist constructor`.
+      # Kit nie ma zadnych zaleznosci, wiec npm byl tu wylacznie posrednikiem:
+      # usuniecie go naprawia blad i skraca joba.
+      - uses: actions/checkout@v4
+        with:
+          repository: monterail/repobrain
+          # Pin po pelnym SHA, nigdy po tagu — tagi gita sa mutowalne,
+          # a to jest zdalny kod wykonywany w CI tego projektu.
+          ref: <PELNY_SHA>
+          path: .repobrain
+
+      # Oficjalne akcje GitHuba pinujemy po tagu SWIADOMIE — inny model zaufania
+      # niz kod z cudzego repo, ktory powyzej pinujemy po pelnym SHA.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      # Pin po pelnym SHA, nigdy po tagu - tagi gita sa mutowalne,
-      # a to jest zdalny kod wykonywany w CI z flaga --yes.
-      - run: npx --yes github:monterail/repobrain#<PELNY_SHA> check
+
+      - run: node .repobrain/bin/knowledge.mjs check
              --paths 'docs/specs/**,**/pricing*'
              --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>'

@@ -31,7 +31,7 @@ który nie jest kompletnym wpisem — nie ma cichego pomijania.
 - `Scope:` przyjmuje wyłącznie `w cenie`, `change request`, `do wyceny`.
 - **Nigdy nie dopisuj pola `Status:`** — status wynika z relacji i jest wyliczany.
 - Nowy wpis dopisuj **na końcu pliku**.
-- Nigdy nie edytuj bloku `WYGENEROWANE:decyzje` w `CLAUDE.md`. Uruchom `npx --yes github:monterail/repobrain#<PELNY_SHA> index`.
+- Nigdy nie edytuj bloku `WYGENEROWANE:decyzje` w `CLAUDE.md`. Uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index`.
 
 ## Placeholdery blokujące CI
 
@@ -59,5 +59,5 @@ ktokolwiek nadal działa według starego wpisu?* Jeśli tak — `Zmienia:`.
 
 ## Po edycji
 
-Uruchom `npx --yes github:monterail/repobrain#<PELNY_SHA> index` i zacommituj `CLAUDE.md` razem z `DECISIONS.md`. Bez tego
+Uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index` i zacommituj `CLAUDE.md` razem z `DECISIONS.md`. Bez tego
 bramka `index-fresh` zablokuje merge.

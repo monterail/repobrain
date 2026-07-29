@@ -273,7 +273,28 @@ CLAUDE.md                        + reguła pierwszeństwa, + blok WYGENEROWANE:d
 
 **Tagi gita są mutowalne.** Każdy z prawem pushu do repo kitu może przesunąć `v1.0.0` i wykonać dowolny kod — z flagą `--yes` — w CI wszystkich projektów klienckich agencji. Workflow pinuje więc pełny SHA commita.
 
-### Uczciwe uzasadnienie `npx` zamiast vendoringu
+### KOREKTA 2026-07-29 — `npx` zastąpione przez `actions/checkout`
+
+> Wszystko poniżej w tej sekcji opisuje **pierwotny** mechanizm dystrybucji. Został
+> wycofany po zgłoszeniu z realnego wdrożenia: `npx --yes github:…#<SHA>` **zawsze**
+> pada w GitHub Actions błędem `GitFetcher requires an Arborist constructor` — to defekt
+> npm 10.x, czyli wersji, którą `actions/setup-node` instaluje razem z node 20 i 22.
+>
+> Weryfikacja z końca tej sekcji (`npx --yes github:isaacs/rimraf --help`, exit 0) była
+> przeprowadzona **lokalnie**, na npm ≥ 11, gdzie defekt nie występuje — czyli w innym
+> środowisku niż jedyne, w którym to polecenie miało realnie biec. To jest właściwy
+> wniosek z tej pomyłki: weryfikacja poza środowiskiem docelowym nie jest weryfikacją.
+>
+> Obowiązujący mechanizm: workflow ściąga kit przez drugi krok `actions/checkout`
+> (`repository: monterail/repobrain`, `ref: <PELNY_SHA>`, `path: .repobrain`) i uruchamia
+> `node .repobrain/bin/knowledge.mjs`. Kit nie ma zależności, więc npm był w tym łańcuchu
+> wyłącznie pośrednikiem — usunięcie go naprawia błąd i skraca joba.
+>
+> **Analiza trade-offu poniżej pozostaje w mocy w całości**: dotyczyła wyboru „kod
+> ściągany zdalnie po pinie" kontra „vendoring", a nie tego, które narzędzie go ściąga.
+> Pin po pełnym SHA i wszystkie jego gwarancje są bez zmian.
+
+### Uczciwe uzasadnienie zdalnego pobierania zamiast vendoringu
 
 Pierwotny spec uzasadniał `npx` zdaniem „usuwamy z systemu ostatnią kopię". To była retoryka: zlewała **kopię wiedzy** (dryfuje względem prawdy — szkodliwa) z **kopią narzędzia** (nazywa się vendoringiem, jest normalna; `node_modules` to same kopie).
 
