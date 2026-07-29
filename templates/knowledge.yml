@@ -1,0 +1,28 @@
+name: knowledge
+
+on:
+  pull_request:
+    # labeled/unlabeled sa OBOWIAZKOWE: bez nich dodanie etykiety
+    # `no-decision` nie retriggeruje builda i PR zostaje czerwony.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+jobs:
+  knowledge:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout i actions/setup-node pinujemy po tagu SWIADOMIE —
+      # to oficjalne akcje GitHuba (inny model zaufania niz zdalny kod z
+      # `npx --yes`, ktory ponizej pinujemy po pelnym SHA).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Pin po pelnym SHA, nigdy po tagu - tagi gita sa mutowalne,
+      # a to jest zdalny kod wykonywany w CI z flaga --yes.
+      - run: npx --yes github:monterail/repobrain#<PELNY_SHA> check
+             --paths 'docs/specs/**,**/pricing*'
+             --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>'

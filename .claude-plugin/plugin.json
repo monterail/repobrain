@@ -1,0 +1,5 @@
+{
+  "name": "repobrain",
+  "version": "0.1.0",
+  "description": "Warstwa wiedzy w repo: DECISIONS.md jako źródło prawdy, skrót generowany do CLAUDE.md, egzekwowanie w CI"
+}
