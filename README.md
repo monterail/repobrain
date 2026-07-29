@@ -18,13 +18,14 @@ oraz **CLI przez `npx`** (bramki w GitHub Actions, bez zależności od Claude Co
 3. [Co ręczne, co automatyczne — tabela zbiorcza](#3-co-ręczne-co-automatyczne--tabela-zbiorcza)
 4. [Instalacja](#4-instalacja)
 5. [Jak powstaje dokumentacja — trzy ścieżki](#5-jak-powstaje-dokumentacja--trzy-ścieżki)
-6. [Format wpisu DEC](#6-format-wpisu-dec)
-7. [Status jest wyliczany, nie zapisywany](#7-status-jest-wyliczany-nie-zapisywany)
-8. [Bramki CI](#8-bramki-ci)
-9. [Komendy CLI](#9-komendy-cli)
-10. [Rytm pracy i właściciel](#10-rytm-pracy-i-właściciel)
-11. [Czego repoBrain nie robi](#11-czego-repobrain-nie-robi)
-12. [Rozwój kitu](#12-rozwój-kitu)
+6. [Routing dokumentów zespołowych](#6-routing-dokumentów-zespołowych)
+7. [Format wpisu DEC](#7-format-wpisu-dec)
+8. [Status jest wyliczany, nie zapisywany](#8-status-jest-wyliczany-nie-zapisywany)
+9. [Bramki CI](#9-bramki-ci)
+10. [Komendy CLI](#10-komendy-cli)
+11. [Rytm pracy i właściciel](#11-rytm-pracy-i-właściciel)
+12. [Czego repoBrain nie robi](#12-czego-repobrain-nie-robi)
+13. [Rozwój kitu](#13-rozwój-kitu)
 
 ---
 
@@ -106,55 +107,218 @@ podsumowanie transkryptu w `Transcripts/` — archiwum, nie źródło decyzji.
 
 ## 4. Instalacja
 
-### Krok 1 — uruchom instalator
+Sześć kroków, ~15 minut. Kroki 1–5 są obowiązkowe, krok 6 (plugin Claude Code) opcjonalny.
+
+### Wymagania wstępne
+
+| Czego potrzebujesz | Po co | Jak sprawdzić |
+|---|---|---|
+| Node.js ≥ 20 | CLI używa `node:test` i natywnych ESM | `node --version` |
+| repo na GitHubie z włączonymi Actions | bramki biegną jako workflow | Settings → Actions |
+| uprawnienia **admina** do repo | branch protection (krok 4) | Settings → Branches jest widoczne |
+| `gh` CLI (opcjonalnie) | szybsze ustawienie branch protection | `gh auth status` |
+
+Kit nie ma zależności runtime'owych — `npx` ściąga sam kod repoBrain i nic poza tym.
+
+### Krok 1 — ustal pełny SHA
+
+Workflow **pinuje commit po pełnym SHA, nigdy po tagu**. Tagi gita są mutowalne: każdy
+z prawem pushu do repo kitu mógłby przesunąć `v1.0.0` i wykonać dowolny kod — z flagą
+`--yes` — w CI wszystkich projektów agencji.
 
 ```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> init
+git ls-remote https://github.com/monterail/repobrain.git main
+# 85d7898f…  refs/heads/main   ← ten SHA wklejasz w krokach 2 i 3
 ```
 
-albo, z pluginem Claude Code: `/knowledge-init`.
+Zapisz go sobie — pojawi się w trzech miejscach. Dalej oznaczam go jako `<SHA>`.
+
+### Krok 2 — uruchom instalator
+
+```bash
+cd /ścieżka/do/projektu
+npx --yes github:monterail/repobrain#<SHA> init
+```
+
+Z pluginem Claude Code równoważnie: `/knowledge-init`.
 
 Instalator **nigdy nie nadpisuje istniejących plików** — raportuje, co dołożył (`+`),
-a co pominął (`=`). Dzięki temu ten sam kod obsługuje repo puste i dwuletnie.
-
-Powstają dwa pliki i jedna modyfikacja:
+a co pominął (`=`). Dzięki tej regule ten sam kod obsługuje repo puste i dwuletnie,
+bez osobnego trybu „retrofit".
 
 ```
-docs/DECISIONS.md                 szkielet z opisem formatu + DEC-001 jako przykład
-.github/workflows/knowledge.yml   workflow wołający npx z pinem po SHA
-CLAUDE.md                         + reguła pierwszeństwa, + pusta para znaczników
+  + docs/DECISIONS.md
+  + .github/workflows/knowledge.yml
+  ~ CLAUDE.md (dopisano sekcję Źródła prawdy)
 ```
+
+| Plik | Zawartość | Jeśli już istnieje |
+|---|---|---|
+| `docs/DECISIONS.md` | opis formatu + `DEC-001` jako działający przykład | pomijany w całości |
+| `.github/workflows/knowledge.yml` | workflow wołający `npx` z pinem po SHA | pomijany w całości |
+| `CLAUDE.md` | reguła pierwszeństwa + pusta para znaczników | **dopisywany na końcu**, nie nadpisywany |
+
+Jeśli `CLAUDE.md` już zawiera znaczniki `WYGENEROWANE:decyzje`, instalator też ich nie
+rusza — wypisze `= CLAUDE.md (znaczniki już są, pominięto)`.
 
 `Transcripts/` i `HYPOTHESES.md` **nie są scaffoldowane** — powstają przy pierwszym
 użyciu `/transcript-extract`. Pusty katalog to sierota, a sieroty to problem, który
 kit ma likwidować.
 
-### Krok 2 — uzupełnij cztery rzeczy ręcznie
+> **Instalacja przerwana w połowie?** Instalator wypisze, które pliki zdążyły powstać,
+> i każe posprzątać ręcznie. Nie ma automatycznego rollbacku: kasowanie plików w cudzym
+> repo jest gorszym domyślnym zachowaniem niż komunikat.
 
-Instalator nie może ich zgadnąć. Dopóki tego nie zrobisz, część bramek jest cicho wyłączona.
+### Krok 3 — uzupełnij trzy rzeczy w workflow
 
-| # | Co | Gdzie | Konsekwencja pominięcia |
-|---|---|---|---|
-| 1 | **Ścieżki decyzyjne** w `--paths` | `.github/workflows/knowledge.yml` | bramka `decision-required` nie chroni niczego |
-| 2 | **Pełny SHA** repoBrain (nigdy tag) | ten sam plik | tagi gita są mutowalne — to zdalny kod w CI z `--yes` |
-| 3 | **Nazwiska klienta** w `--client-names` | ten sam plik | `integrity` nigdy nie wymaga `Źródło:` dla decyzji klienta |
-| 4 | **Branch protection**: „require branches to be up to date" | ustawienia repo na GitHubie | dwa PR-y dodadzą ten sam numer DEC i cicho się zmergują |
+Instalator nie może ich zgadnąć. **Dopóki tego nie zrobisz, część bramek jest wyłączona.**
 
-Ścieżki decyzyjne zaczynaj **wąsko** — `docs/specs/**` i pliki cenowe. Nie dodawaj
-katalogu migracji na starcie: większość migracji nie ma za sobą decyzji klienckiej,
-a łapanie ich zamienia etykietę `no-decision` w odruch.
+Otwórz `.github/workflows/knowledge.yml` i podmień ostatnią linię:
 
-Punkt 3 ma bezpiecznik: jeśli zostawisz w konfiguracji niepodmieniony placeholder
-(`<nazwiska klienta…>`), CLI potraktuje go jak brak flagi i **głośno wypisze**, że reguła
-jest wyłączona. Cicha śmierć reguły przy zielonym CI jest gorsza niż jej brak.
+```yaml
+# PRZED (prosto z instalatora)
+- run: npx --yes github:monterail/repobrain#<PELNY_SHA> check
+       --paths 'docs/specs/**,**/pricing*'
+       --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>'
 
-### Krok 3 — pierwsza generacja
-
-```bash
-npx --yes github:monterail/repobrain#<PELNY_SHA> index
+# PO (uzupełnione)
+- run: npx --yes github:monterail/repobrain#85d7898f… check
+       --paths 'docs/specs/**,docs/api-contract.md,**/pricing*'
+       --client-names 'Nowak, Wiśniewska'
 ```
 
-Zacommituj `docs/DECISIONS.md` i `CLAUDE.md` **razem**.
+| # | Co | Konsekwencja pominięcia |
+|---|---|---|
+| 1 | **`<PELNY_SHA>`** → SHA z kroku 1 | workflow wywali się na nieistniejącej referencji |
+| 2 | **`--paths`** → ścieżki decyzyjne tego projektu | bramka `decision-required` nie chroni niczego |
+| 3 | **`--client-names`** → nazwiska osób decyzyjnych po stronie klienta | `integrity` nigdy nie wymaga `Źródło:` dla decyzji klienta |
+
+**Jak dobrać `--paths`.** Zacznij **wąsko**: `docs/specs/**` i pliki cenowe. Nie dodawaj
+katalogu migracji na starcie — większość migracji nie ma za sobą decyzji klienckiej,
+a łapanie ich zamienia etykietę `no-decision` w odruch. Ścieżki rozszerza się później,
+gdy audyt pokaże, że coś ważnego przechodzi bez wpisu. Składnia globów: `*` nie
+przekracza `/`, `**` przekracza.
+
+**Jak dobrać `--client-names`.** Dopasowanie jest **po podciągu, bez wielkości liter**,
+i celowo luźne — `Nowak` trafi też w `Nowakowski`. Kierunek błędu jest bezpieczny:
+fałszywy alarm („wymagamy `Źródło:` tam, gdzie nie trzeba") jest tańszy niż przeoczona
+decyzja klienta bez dowodu.
+
+**Bezpiecznik.** Jeśli zostawisz niepodmieniony placeholder (`<nazwiska klienta…>`),
+CLI potraktuje go jak brak flagi i **głośno to wypisze**:
+
+```
+ℹ reguła „decyzja klienta wymaga pola Źródło" jest wyłączona — --client-names zawiera
+  niepodmieniony placeholder z konfiguracji, traktowany jak brak flagi.
+```
+
+Cicha śmierć reguły przy zielonym CI jest gorsza niż jej brak. Z tego samego powodu CLI
+odrzuca nieznane flagi — literówka `--pahts` zatrzymuje build, zamiast zostać zignorowana.
+
+### Krok 4 — włącz branch protection
+
+**To jest warunek instalacji, nie zalecenie.** Bez „require branches to be up to date"
+dwa PR-y mogą dodać wpis o tym samym numerze DEC i auto-zmergować się (wstawiają tekst
+w różnych miejscach pliku, więc git nie widzi konfliktu). Drugi merge czerwieni `main`,
+a naprawa przez przenumerowanie unieważnia referencje zdążone już w Slacku i w polach
+`Odwraca:`.
+
+Przez UI: **Settings → Branches → Add branch protection rule** dla `main`:
+
+- ✅ Require status checks to pass before merging
+- ✅ **Require branches to be up to date before merging** ← to jest ten krytyczny
+- w liście checków wybierz `knowledge`
+
+Przez `gh` CLI:
+
+```bash
+gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["knowledge"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+JSON
+```
+
+`"strict": true` to dokładnie „require branches to be up to date".
+
+### Krok 5 — pierwsza generacja i commit
+
+```bash
+npx --yes github:monterail/repobrain#<SHA> index
+```
+
+```
+✓ CLAUDE.md zaktualizowany — 1 aktywnych, 0 w historii
+```
+
+Zacommituj **oba pliki razem** — rozdzielenie ich na dwa commity da czerwoną bramkę
+`index-fresh` na tym pierwszym:
+
+```bash
+git add docs/DECISIONS.md CLAUDE.md .github/workflows/knowledge.yml
+git commit -m "chore: instalacja repoBrain"
+```
+
+### Weryfikacja — czy na pewno działa
+
+Uruchom bramki lokalnie, dokładnie tak, jak zrobi to CI:
+
+```bash
+npx --yes github:monterail/repobrain#<SHA> check \
+  --paths 'docs/specs/**' --client-names 'Nowak'
+```
+
+```
+✓ repoBrain — bramki zielone: integrity, index-fresh
+  (pominięte: decision-required (brak kontekstu PR))
+```
+
+Lokalnie `decision-required` zawsze jest pomijana — potrzebuje `GITHUB_EVENT_PATH`
+i kontekstu pull requesta. **To jest oczekiwane.** Żeby sprawdzić ją naprawdę, zrób
+próbny PR dotykający ścieżki decyzyjnej i zobacz, czy zapali się na czerwono.
+
+Checklista po instalacji:
+
+- [ ] `npx … check` lokalnie zielone
+- [ ] workflow przeszedł na pierwszym PR (zakładka Actions)
+- [ ] w logu CI **nie ma** komunikatu o wyłączonej regule `--client-names`
+- [ ] w logu CI bramka `decision-required` jest w „zielonych", nie w „pominiętych"
+- [ ] próbny PR w `docs/specs/**` bez wpisu DEC → czerwony
+- [ ] ten sam PR z etykietą `no-decision` → zielony (i build się retriggerował)
+- [ ] `main` ma branch protection ze `strict: true`
+- [ ] `DECISIONS.md` ma przypisanego właściciela (patrz §11)
+
+### Krok 6 — plugin Claude Code (opcjonalnie)
+
+Plugin daje zespołowi komendy `/knowledge-init`, `/transcript-extract` i skille
+`decisions-format`, `knowledge-audit`. **Nie jest wymagany** — bramki CI działają
+niezależnie od Claude Code, taki był niezmiennik architektoniczny.
+
+Najprostsza droga dzisiaj: skopiuj zawartość `.claude-plugin/` do katalogu `.claude/`
+projektu docelowego i zacommituj — skille i komendy działają wtedy dla całego zespołu:
+
+```bash
+git clone https://github.com/monterail/repobrain.git /tmp/repobrain
+mkdir -p .claude/skills .claude/commands
+cp -r /tmp/repobrain/.claude-plugin/skills/* .claude/skills/
+cp -r /tmp/repobrain/.claude-plugin/commands/* .claude/commands/
+```
+
+W skopiowanych plikach podmień `<PELNY_SHA>` na SHA z kroku 1 — komendy wołają CLI
+z tym samym pinem co workflow.
+
+> Repo nie ma jeszcze `.claude-plugin/marketplace.json`, więc instalacja przez
+> `/plugin marketplace add` nie zadziała. To znany brak, nie błąd konfiguracji po Twojej stronie.
+
+### Aktualizacja kitu
+
+Poprawka w repoBrain nie propaguje się sama — pin po SHA jest tego świadomym kosztem.
+Żeby podnieść wersję w projekcie: weź nowy SHA (krok 1), podmień go w
+`.github/workflows/knowledge.yml` oraz w skopiowanych komendach, zrób PR. Zielony build
+na tym PR jest potwierdzeniem, że nowa wersja nie psuje istniejących wpisów.
 
 ---
 
@@ -229,7 +393,99 @@ git add docs/DECISIONS.md CLAUDE.md && git commit
 
 ---
 
-## 6. Format wpisu DEC
+## 6. Routing dokumentów zespołowych
+
+Zespół produkuje więcej niż transkrypty z callów: BA papers, notatki z refinementów,
+dokumentację architektury, research. Ta sekcja mówi, gdzie każda z tych rzeczy ma żyć.
+
+### Jedno pytanie rozstrzyga wszystko
+
+> **Czy ta rzecz obowiązuje, dopóki ktoś jej nie odwróci?**
+
+```
+                    ┌─ TAK ──────────────▶ wpis DEC w docs/DECISIONS.md
+                    │
+czy obowiązuje      ├─ NIE, ale jest dowodem, skąd wzięła się decyzja
+aż do odwrócenia?   │                    ▶ Transcripts/YYYY-MM-DD-slug.md
+                    │
+                    ├─ NIE, to kontrakt: co dokładnie budujemy
+                    │                    ▶ docs/specs/
+                    │
+                    ├─ NIE, to niepewność do rozstrzygnięcia
+                    │                    ▶ HYPOTHESES.md
+                    │
+                    └─ NIE, po prostu się przyda
+                                         ▶ zwykłe docs/, bez ceremonii
+```
+
+**Kryterium to cykl życia, nie typ dokumentu.** Decyzja i zadanie wyglądają w notatce
+podobnie; różni je to, że decyzja obowiązuje aż ktoś ją odwróci, a zadanie umiera
+po wykonaniu.
+
+### Tabela routingu
+
+| Dokument | Gdzie | Dlaczego |
+|---|---|---|
+| BA paper definiujący **co budujemy** | `docs/specs/` + wpis DEC na rozstrzygnięcia sporne | kontrakt implementacyjny — poziom 3 reguły pierwszeństwa |
+| BA paper **analityczny** (opcje, porównania, research) | zwykłe `docs/`; wynik → wpis DEC | zestarzeje się w chwili, gdy decyzja zapadnie |
+| Notatki z refinementu | `Transcripts/YYYY-MM-DD-refinement-slug.md`, `Typ: wewnętrzne` | ten sam cykl życia co transkrypt: dowód, upstream decyzji |
+| Warsztat discovery | `Transcripts/…`, `Typ: discovery` | jw. |
+| Ustalenia z dostawcą | `Transcripts/…`, `Typ: vendor` | jw. |
+| Otwarte pytania z refinementu | `HYPOTHESES.md` | mają zostać rozstrzygnięte, nie zarchiwizowane |
+| Ustalenia „to jest w cenie / to change request" | wpis DEC ze `Scope:` | dokładnie to, przed czym `Scope:` chroni w sporze |
+| Decyzja architektoniczna (ADR-owa) | wpis DEC — **nie osobny ADR** | dublowanie magazynów to defekt, który kit likwiduje |
+| Estymaty, harmonogram | poza repo (Jira) — konsekwencje → pole `Konsekwencje:` we wpisie DEC | przeterminowują się szybciej niż PR |
+| Action items z dowolnego spotkania | Jira — **nie repo** | listy TODO w `docs/` to listy, których nikt nie zamyka |
+| Runbook, onboarding, README modułu | zwykłe `docs/` | nikt nie musi pilnować ich świeżości |
+
+### Trzy rzeczy, które działają, choć nazwy sugerują inaczej
+
+**1. `Transcripts/` nie jest tylko dla klienta.** Szablon podsumowania ma pole `Typ:`
+z czterema wartościami — `klient / wewnętrzne / discovery / vendor`. Refinement to
+`wewnętrzne`, warsztat BA to `discovery`. Katalog trzyma podsumowania **dowolnego
+spotkania**, nie tylko rozmów z klientem.
+
+**2. `/transcript-extract` przyjmuje każdy plik.** Notatki z refinementu, zrzut z Miro,
+podsumowanie z Confluence — komenda robi z nich podsumowanie w ustandaryzowanym formacie
+i proponuje drafty DEC. Nie musi to być stenogram.
+
+**3. `Źródło:` może wskazywać na cokolwiek w repo.** Bramka `integrity` sprawdza
+wyłącznie, czy plik istnieje — nie wymusza prefiksu `Transcripts/`. BA paper jest
+legalnym materiałem dowodowym:
+
+```markdown
+**Źródło:** docs/specs/ba-model-rozliczen.md
+```
+
+### Dokument nie jest jednostką wiedzy — decyzja jest
+
+BA paper na dwadzieścia stron może nieść trzy decyzje i siedemnaście opisów. Proces
+**nie archiwizuje papera jako „wiedzy"** — wyciąga z niego trzy wpisy DEC i zostawia
+paper jako dowód, na który te wpisy wskazują przez `Źródło:`.
+
+Dlatego nie ma i nie powinno być „bramki na kompletność dokumentacji projektowej":
+mierzyłaby objętość, nie wiedzę. Jedyne, co repoBrain sprawdza w dokumentacji poza
+`DECISIONS.md`, to czy zmiana w ścieżce decyzyjnej ma za sobą decyzję.
+
+### Dwie znane luki
+
+Zapisane świadomie, żeby nie budować fałszywego poczucia pokrycia:
+
+**Dryf specyfikacji względem decyzji.** DEC-039 zmienia zachowanie billingu,
+`docs/specs/billing.md` dalej opisuje stare — i **nic tego nie łapie**. Bramki pilnują
+świeżości bloku w `CLAUDE.md`, nie świeżości speców. Spec pozostaje ręczną kopią wiedzy,
+czyli dokładnie tą kategorią, którą kit likwiduje w jednym miejscu i toleruje w drugim.
+Obejście proceduralne: przy wpisie DEC wypełniaj `Konsekwencje:` na tyle konkretnie,
+żeby review PR-a zobaczył, który spec wymaga aktualizacji.
+
+**Sprzężenie wsteczne działa tylko dla `Transcripts/`.** `/knowledge-audit` sprawdza,
+czy podsumowanie z sekcją „Decyzje" ma na siebie wskazujący wpis DEC. BA paper
+z decyzjami, z którego nikt nie zrobił wpisów, **nie zostanie zgłoszony** — audyt nie
+zagląda poza `Transcripts/`.
+
+---
+
+## 7. Format wpisu DEC
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
@@ -254,7 +510,7 @@ git add docs/DECISIONS.md CLAUDE.md && git commit
   (Dlatego nagłówki sekcji opisowych w szablonie są poziomu `### `.)
 - `Odwraca:` i `Zmienia:` **wykluczają się wzajemnie** — wpis ma co najwyżej jedną relację.
 - Relacja musi wskazywać na wpis **wcześniejszy** wg pary (data, numer ID).
-- **Nigdy nie dopisuj pola `Status:`** — patrz §7.
+- **Nigdy nie dopisuj pola `Status:`** — patrz §8.
 
 ### Reguły miękkie (konwencja, nie kod)
 
@@ -278,7 +534,7 @@ format, przed pierwszym wpisem) bloki kodu są ignorowane — tam to dokumentacj
 
 ---
 
-## 7. Status jest wyliczany, nie zapisywany
+## 8. Status jest wyliczany, nie zapisywany
 
 Nie ma pola `Status:`. Gdyby było, ktoś musiałby je zaktualizować przy dodaniu nowego
 wpisu — i tego właśnie nikt nigdy nie robi. Zamiast tego **nowy wpis deklaruje relację
@@ -322,7 +578,7 @@ zduplikował, kończy się błędem „napraw ręcznie", nie cichym nadpisaniem.
 
 ---
 
-## 8. Bramki CI
+## 9. Bramki CI
 
 Workflow `.github/workflows/knowledge.yml` odpala się na `pull_request`
 (typy `opened, synchronize, reopened, labeled, unlabeled`) i na `push` do `main`.
@@ -365,7 +621,7 @@ na nieistniejący transkrypt; **wstecz** audyt ostrzega, że coś z rozmowy wypa
 
 ---
 
-## 9. Komendy CLI
+## 10. Komendy CLI
 
 ```bash
 npx --yes github:monterail/repobrain#<PELNY_SHA> <init|index|check> [flagi]
@@ -384,7 +640,7 @@ Skille ładowane automatycznie: `decisions-format`, `knowledge-audit`.
 
 ---
 
-## 10. Rytm pracy i właściciel
+## 11. Rytm pracy i właściciel
 
 `DECISIONS.md` **ma przypisanego właściciela** — domyślnie PM projektu. Audyt poprzedniego
 projektu sformułował prawo „każdy magazyn wymaga właściciela i tempa aktualizacji";
@@ -405,7 +661,7 @@ do repo jest człowiek. Dlatego rola jest przypisana, a nie dorozumiana.
 
 ---
 
-## 11. Czego repoBrain nie robi
+## 12. Czego repoBrain nie robi
 
 Świadome granice, żeby nie budować oczekiwań, których kit nie spełnia:
 
@@ -428,7 +684,7 @@ do repo jest człowiek. Dlatego rola jest przypisana, a nie dorozumiana.
 
 ---
 
-## 12. Rozwój kitu
+## 13. Rozwój kitu
 
 ```
 bin/knowledge.mjs     CLI — jedyne miejsce znające filesystem, argv i zmienne CI
