@@ -11,8 +11,8 @@ const CLI = join(KIT, 'bin/knowledge.mjs');
 
 function run(cwd, args, env = {}) {
   const envToPass = { ...process.env, ...env };
-  // Jeśli GITHUB_EVENT_PATH nie został jawnie podany w env, usuń go
-  // (żeby nie dziedziczyć zmiennej z CI, np. GitHub Actions)
+  // If GITHUB_EVENT_PATH was not passed explicitly in env, drop it
+  // (so we do not inherit the variable from CI, e.g. GitHub Actions)
   if (!('GITHUB_EVENT_PATH' in env)) {
     delete envToPass.GITHUB_EVENT_PATH;
   }
@@ -28,57 +28,57 @@ function run(cwd, args, env = {}) {
 
 const ENTRY = (n, date, extra = '') => `
 ## DEC-${String(n).padStart(3, '0')} — ${date}
-${extra}**Obszar:** proces
-**Temat:** Temat ${n}
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Zespół
+${extra}**Area:** process
+**Topic:** Topic ${n}
+**Context:** C
+**Decision:** D
+**Consequences:** CO
+**Decided by:** The team
 `;
 
-test('pełna pętla: init, index, odwrócenie, zmiana, bramki', (t) => {
+test('full loop: init, index, reversal, change, gates', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-e2e-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
-  // 1. init w pustym repo
+  // 1. init in an empty repo
   assert.equal(run(repo, ['init']).code, 0);
   const claude = join(repo, 'CLAUDE.md');
   const decisions = join(repo, 'docs/DECISIONS.md');
-  assert.match(readFileSync(claude, 'utf8'), /WYGENEROWANE:decyzje/);
+  assert.match(readFileSync(claude, 'utf8'), /GENERATED:decisions/);
   assert.match(readFileSync(decisions, 'utf8'), /DEC-001/);
 
-  // 2. index — DEC-001 z szablonu ląduje w bloku
+  // 2. index — DEC-001 from the template lands in the block
   assert.equal(run(repo, ['index']).code, 0);
   assert.match(readFileSync(claude, 'utf8'), /DEC-001/);
 
-  // 3. DEC-002 odwraca DEC-001
-  appendFileSync(decisions, ENTRY(2, '2026-02-01', '**Odwraca:** DEC-001\n'));
+  // 3. DEC-002 reverses DEC-001
+  appendFileSync(decisions, ENTRY(2, '2026-02-01', '**Reverses:** DEC-001\n'));
   assert.equal(run(repo, ['index']).code, 0);
   let block = readFileSync(claude, 'utf8');
-  assert.match(block, /Odwrócone/);
-  assert.match(block, /DEC-001.*odwrócony przez DEC-002/);
+  assert.match(block, /Reversed/);
+  assert.match(block, /DEC-001.*reversed by DEC-002/);
 
-  // 4. DEC-003 zmienia DEC-002 — oba zostają aktywne
-  appendFileSync(decisions, ENTRY(3, '2026-03-01', '**Zmienia:** DEC-002\n'));
+  // 4. DEC-003 changes DEC-002 — both stay active
+  appendFileSync(decisions, ENTRY(3, '2026-03-01', '**Changes:** DEC-002\n'));
   assert.equal(run(repo, ['index']).code, 0);
   block = readFileSync(claude, 'utf8');
-  assert.match(block, /DEC-002.*zmienione przez DEC-003/);
+  assert.match(block, /DEC-002.*changed by DEC-003/);
   assert.match(block, /DEC-003/);
 
-  // 5. check po regeneracji — zielone
+  // 5. check after regeneration — green
   assert.equal(run(repo, ['check']).code, 0);
 
-  // 6. nieaktualny blok — czerwone
+  // 6. stale block — red
   appendFileSync(decisions, ENTRY(4, '2026-04-01'));
   const stale = run(repo, ['check']);
   assert.equal(stale.code, 1);
-  assert.match(stale.stderr, /nieaktualny/);
+  assert.match(stale.stderr, /stale/);
 
   assert.equal(run(repo, ['index']).code, 0);
   assert.equal(run(repo, ['check']).code, 0);
 });
 
-test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
+test('the decision-required gate blocks and yields to the label', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-gate-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
@@ -95,7 +95,7 @@ test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
   mkdirSync(join(repo, 'docs/specs'), { recursive: true });
   writeFileSync(join(repo, 'docs/specs/M01.md'), '# Spec\n');
   execFileSync('git', ['add', '-A'], { cwd: repo });
-  execFileSync('git', ['commit', '-qm', 'spec bez decyzji'], { cwd: repo });
+  execFileSync('git', ['commit', '-qm', 'spec without a decision'], { cwd: repo });
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
 
   const eventPath = join(repo, 'event.json');
@@ -111,18 +111,18 @@ test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
   writeEvent(['no-decision']);
   const allowed = run(repo, ['check', '--paths', 'docs/specs/**'], { GITHUB_EVENT_PATH: eventPath });
   assert.equal(allowed.code, 0);
-  assert.match(allowed.stdout, /bramki zielone: integrity, index-fresh, decision-required/,
-    'gdy jest kontekst PR i --paths, decision-required naprawde biegnie i jest wymienione');
+  assert.match(allowed.stdout, /gates green: integrity, index-fresh, decision-required/,
+    'with PR context and --paths, decision-required really runs and is listed');
 
-  // Kontekst PR jest, ale brak --paths — bramka nie moze nic sensownie sprawdzic,
-  // wiec komunikat sukcesu musi to przyznac zamiast udawac pelna ochrone.
+  // There is PR context but no --paths — the gate cannot check anything meaningful,
+  // so the success message must admit it instead of faking full protection.
   const noPaths = run(repo, ['check'], { GITHUB_EVENT_PATH: eventPath });
   assert.equal(noPaths.code, 0);
-  assert.match(noPaths.stdout, /bramki zielone: integrity, index-fresh/);
-  assert.match(noPaths.stdout, /pominięte.*decision-required.*brak --paths/);
+  assert.match(noPaths.stdout, /gates green: integrity, index-fresh/);
+  assert.match(noPaths.stdout, /skipped.*decision-required.*no --paths/);
 });
 
-test('nieznana flaga jest odrzucana, nie po cichu ignorowana', (t) => {
+test('an unknown flag is rejected, not silently ignored', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-flags-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
@@ -130,69 +130,69 @@ test('nieznana flaga jest odrzucana, nie po cichu ignorowana', (t) => {
   assert.equal(run(repo, ['index']).code, 0);
 
   const typo = run(repo, ['check', '--pahts', 'docs/specs/**']);
-  assert.equal(typo.code, 1, 'literowka we fladze nie moze dac zielonego wyniku');
-  assert.match(typo.stderr, /Nieznana flaga/);
+  assert.equal(typo.code, 1, 'a typo in a flag must not produce a green result');
+  assert.match(typo.stderr, /Unknown flag/);
   assert.match(typo.stderr, /--pahts/);
 
-  const unknownOnInit = run(repo, ['init', '--client-names', 'Kowalski']);
-  assert.equal(unknownOnInit.code, 1, 'init nie przyjmuje --client-names');
-  assert.match(unknownOnInit.stderr, /Nieznana flaga/);
+  const unknownOnInit = run(repo, ['init', '--client-names', 'Smith']);
+  assert.equal(unknownOnInit.code, 1, 'init does not accept --client-names');
+  assert.match(unknownOnInit.stderr, /Unknown flag/);
 });
 
-test('komunikat sukcesu wylicza, ktore bramki faktycznie bieganly', (t) => {
+test('the success message lists which gates actually ran', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-gate-summary-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
   assert.equal(run(repo, ['init']).code, 0);
   assert.equal(run(repo, ['index']).code, 0);
 
-  // Bez --paths i bez kontekstu PR — decision-required nie bieglo naprawde.
+  // No --paths and no PR context — decision-required did not really run.
   const noContext = run(repo, ['check']);
   assert.equal(noContext.code, 0);
-  assert.match(noContext.stdout, /bramki zielone: integrity, index-fresh/);
-  assert.match(noContext.stdout, /pominięte/);
-  assert.match(noContext.stdout, /brak kontekstu PR/);
+  assert.match(noContext.stdout, /gates green: integrity, index-fresh/);
+  assert.match(noContext.stdout, /skipped/);
+  assert.match(noContext.stdout, /no PR context/);
 
-  // Bez --client-names — informacja o wylaczonej regule, nie blad.
-  assert.match(noContext.stdout, /decyzja klienta wymaga pola Źródło.*wyłączona/);
+  // No --client-names — a notice about the disabled rule, not an error.
+  assert.match(noContext.stdout, /a client decision requires the Source field.*is disabled/);
 });
 
-test('niepodmieniony placeholder w --client-names dziala jak brak flagi, nie jak cicho wylaczona regula', (t) => {
+test('an unreplaced placeholder in --client-names acts like a missing flag, not a silently disabled rule', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-placeholder-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
   assert.equal(run(repo, ['init']).code, 0);
 
-  // Decyzja klienta bez pola Źródło — dokladnie przypadek, ktory regula
-  // ma wylapac, gdy --client-names jest realnie skonfigurowane.
+  // A client decision with no Source field — exactly the case the rule is meant
+  // to catch when --client-names is genuinely configured.
   const decisions = join(repo, 'docs/DECISIONS.md');
-  appendFileSync(decisions, ENTRY(2, '2026-02-01', '').replace('**Podjął:** Zespół', '**Podjął:** Kowalski (klient)'));
+  appendFileSync(decisions, ENTRY(2, '2026-02-01', '').replace('**Decided by:** The team', '**Decided by:** Smith (client)'));
   assert.equal(run(repo, ['index']).code, 0);
 
-  // 1. Bez flagi — ostrzezenie, zielone.
+  // 1. No flag — a warning, green.
   const noFlag = run(repo, ['check']);
   assert.equal(noFlag.code, 0);
-  assert.match(noFlag.stdout, /reguła.*wyłączona.*brak --client-names/);
+  assert.match(noFlag.stdout, /rule is disabled.*no --client-names/);
 
-  // 2. Prawdziwe nazwisko — blokuje.
-  const realName = run(repo, ['check', '--client-names', 'Kowalski']);
-  assert.equal(realName.code, 1, 'prawdziwe nazwisko klienta musi nadal blokowac');
-  assert.match(realName.stderr, /Źródło/);
+  // 2. A real name — blocks.
+  const realName = run(repo, ['check', '--client-names', 'Smith']);
+  assert.equal(realName.code, 1, 'a real client name must still block');
+  assert.match(realName.stderr, /Source/);
 
-  // 3. Niepodmieniony placeholder z templates/knowledge.yml — musi zachowywac
-  // sie jak (1), NIE jak cicho zielony sukces bez ostrzezenia.
+  // 3. The unreplaced placeholder from templates/knowledge.yml — must behave
+  // like (1), NOT like a quietly green success with no warning.
   const placeholder = run(repo, [
-    'check', '--client-names', '<nazwiska klienta po przecinku, np. Kowalski, Nowak>',
+    'check', '--client-names', '<comma-separated client names, e.g. Smith, Jones>',
   ]);
-  assert.equal(placeholder.code, 0, 'placeholder nie moze blokowac — traktowany jak brak flagi');
+  assert.equal(placeholder.code, 0, 'a placeholder must not block — it is treated as a missing flag');
   assert.match(
     placeholder.stdout,
-    /reguła.*wyłączona.*niepodmieniony placeholder/,
-    'placeholder musi jawnie ostrzegac, nie byc cicho martwy',
+    /rule is disabled.*unreplaced placeholder/,
+    'a placeholder must warn explicitly, not be silently dead',
   );
 });
 
-test('run() nie przekazuje GITHUB_EVENT_PATH z otoczenia, chyba ze podano jawnie', (t) => {
+test('run() does not pass GITHUB_EVENT_PATH from the environment unless given explicitly', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-e2e-env-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
@@ -204,13 +204,13 @@ test('run() nie przekazuje GITHUB_EVENT_PATH z otoczenia, chyba ze podano jawnie
     pull_request: { base: { sha: 'x' }, head: { sha: 'y' }, labels: [] },
   }));
 
-  // Symulacja: zmienna JEST ustawiona w srodowisku wywolujacego proces testowy —
-  // dokladnie tak, jak GitHub Actions ustawia ja w kazdym kroku kazdego joba.
+  // Simulation: the variable IS set in the environment of the calling test process —
+  // exactly the way GitHub Actions sets it in every step of every job.
   const originalEnv = process.env.GITHUB_EVENT_PATH;
   process.env.GITHUB_EVENT_PATH = fakeEvent;
   try {
     const result = run(repo, ['check']);
-    assert.equal(result.code, 0, 'check nie moze przejac cudzego zdarzenia PR z otoczenia procesu testowego');
+    assert.equal(result.code, 0, 'check must not hijack somebody else\'s PR event from the test process environment');
   } finally {
     if (originalEnv === undefined) delete process.env.GITHUB_EVENT_PATH;
     else process.env.GITHUB_EVENT_PATH = originalEnv;

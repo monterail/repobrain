@@ -1,210 +1,210 @@
 # repoBrain
 
-Warstwa wiedzy dla projektów klienckich, trzymana w repo i egzekwowana przez CI.
+A knowledge layer for client projects, kept in the repo and enforced by CI.
 
-Jedno źródło prawdy (`docs/DECISIONS.md`), z którego generowany jest skrót aktywnych decyzji
-wprost do `CLAUDE.md`. Rozjazd między nimi jest niemożliwy dłużej niż jeden PR, bo bramka CI
-regeneruje i porównuje — tak jak check lockfile'a.
+One source of truth (`docs/DECISIONS.md`), from which a digest of the active decisions is
+generated straight into `CLAUDE.md`. The two cannot drift apart for longer than a single PR,
+because a CI gate regenerates and compares — the same way a lockfile check does.
 
-Dystrybucja dwiema ścieżkami z jednego repo: **plugin Claude Code** (skille + komendy dla zespołu)
-oraz **CLI uruchamiane wprost przez `node`** (bramki w GitHub Actions, bez zależności
-od Claude Code i bez menedżera pakietów — kit nie ma żadnych zależności).
-
----
-
-## Spis treści
-
-1. [Skąd to się wzięło](#1-skąd-to-się-wzięło)
-2. [Model: źródło kontra derywata](#2-model-źródło-kontra-derywata)
-3. [Co ręczne, co automatyczne — tabela zbiorcza](#3-co-ręczne-co-automatyczne--tabela-zbiorcza)
-4. [Instalacja](#4-instalacja)
-5. [Jak powstaje dokumentacja — trzy ścieżki](#5-jak-powstaje-dokumentacja--trzy-ścieżki)
-6. [Routing dokumentów zespołowych](#6-routing-dokumentów-zespołowych)
-7. [Format wpisu DEC](#7-format-wpisu-dec)
-8. [Status jest wyliczany, nie zapisywany](#8-status-jest-wyliczany-nie-zapisywany)
-9. [Bramki CI](#9-bramki-ci)
-10. [Komendy CLI](#10-komendy-cli)
-11. [Rytm pracy i właściciel](#11-rytm-pracy-i-właściciel)
-12. [Czego repoBrain nie robi](#12-czego-repobrain-nie-robi)
-13. [Rozwój kitu](#13-rozwój-kitu)
+Distributed along two paths from one repo: a **Claude Code plugin** (skills + commands for the
+team) and a **CLI run straight through `node`** (the gates in GitHub Actions, with no dependency
+on Claude Code and no package manager — the kit has no dependencies at all).
 
 ---
 
-## 1. Skąd to się wzięło
+## Table of contents
 
-Z audytu warstwy wiedzy w zakończonym projekcie klienckim: pięć równoległych magazynów,
-ręcznie utrzymywane kopie rozjechały się ze źródłem, a hook synchronizujący commitował cudzą
-pracę pod fałszywym komunikatem. Wspólna przyczyna wszystkich defektów była jedna —
-**kopia utrzymywana ręcznie zawsze się rozjedzie**. repoBrain zastępuje kopie derywatą.
-
-Z tego wynika cały układ narzędzia:
-
-- kopii się nie utrzymuje — kopię się **generuje** i porównuje w CI,
-- statusu decyzji się nie zapisuje — status **wynika** z relacji między wpisami,
-- automat nie pisze do repo bez człowieka — bo to była przyczyna defektu, nie jego lekarstwo.
+1. [Where this came from](#1-where-this-came-from)
+2. [The model: source versus derivative](#2-the-model-source-versus-derivative)
+3. [What is manual, what is automatic — a summary table](#3-what-is-manual-what-is-automatic--a-summary-table)
+4. [Installation](#4-installation)
+5. [How documentation gets written — three paths](#5-how-documentation-gets-written--three-paths)
+6. [Routing team documents](#6-routing-team-documents)
+7. [DEC entry format](#7-dec-entry-format)
+8. [Status is derived, not written down](#8-status-is-derived-not-written-down)
+9. [CI gates](#9-ci-gates)
+10. [CLI commands](#10-cli-commands)
+11. [Working rhythm and ownership](#11-working-rhythm-and-ownership)
+12. [What repoBrain does not do](#12-what-repobrain-does-not-do)
+13. [Developing the kit](#13-developing-the-kit)
 
 ---
 
-## 2. Model: źródło kontra derywata
+## 1. Where this came from
 
-To jest podział, z którego wynika wszystko poniżej.
+From an audit of the knowledge layer in a finished client project: five parallel stores,
+hand-maintained copies drifted away from the source, and a syncing hook committed somebody
+else's work under a misleading message. Every defect had the same root cause —
+**a hand-maintained copy always drifts**. repoBrain replaces copies with a derivative.
+
+The whole shape of the tool follows from that:
+
+- a copy is not maintained — a copy is **generated** and compared in CI,
+- a decision's status is not written down — status **follows** from the relations between entries,
+- no automation writes to the repo without a human — because that was the cause of the defect, not its cure.
+
+---
+
+## 2. The model: source versus derivative
+
+This is the split everything below follows from.
 
 ```
-┌─ ŹRÓDŁO (człowiek pisze, review w PR) ──────────────────────┐
+┌─ SOURCE (written by a human, reviewed in the PR) ────────────┐
 │                                                              │
-│  docs/DECISIONS.md      pełna treść decyzji                  │
-│  Transcripts/*.md       podsumowania spotkań (dowód)         │
-│  HYPOTHESES.md          niepewności do rozstrzygnięcia       │
-│  docs/specs/            kontrakt implementacyjny             │
+│  docs/DECISIONS.md      the full text of each decision       │
+│  Transcripts/*.md       meeting summaries (evidence)         │
+│  HYPOTHESES.md          uncertainties to be settled          │
+│  docs/specs/            the implementation contract          │
 │                                                              │
 └──────────────────────────┬───────────────────────────────────┘
                            │   knowledge.mjs index
                            ▼
-┌─ DERYWATA (maszyna generuje, NIKT nie edytuje ręcznie) ─────┐
+┌─ DERIVATIVE (machine-generated, NOBODY edits by hand) ───────┐
 │                                                              │
-│  CLAUDE.md → blok <!-- WYGENEROWANE:decyzje -->              │
-│              tabela aktywnych decyzji + lista odwróconych    │
+│  CLAUDE.md → the <!-- GENERATED:decisions --> block          │
+│              table of active decisions + list of reversed    │
 │                                                              │
 └──────────────────────────┬───────────────────────────────────┘
-                           │   knowledge.mjs check  (bramka index-fresh)
+                           │   knowledge.mjs check  (index-fresh gate)
                            ▼
-              rozjazd = czerwony PR, nie da się zmergować
+                  drift = red PR, it cannot be merged
 ```
 
-Reguła pierwszeństwa, którą instalator dopisuje do `CLAUDE.md`:
+The precedence rule the installer appends to `CLAUDE.md`:
 
-1. `docs/DECISIONS.md` — pełna treść; `Odwraca:`/`Zmienia:` rozstrzygają aktualność
-2. blok `WYGENEROWANE:decyzje` — skrót aktywnych, zawsze zgodny z (1)
-3. `docs/specs/` — kontrakt implementacyjny
-4. `Transcripts/` — materiał dowodowy, gdy 1–3 milczą
+1. `docs/DECISIONS.md` — the full text; `Reverses:`/`Changes:` settle what is current
+2. the `GENERATED:decisions` block — a digest of the active ones, always consistent with (1)
+3. `docs/specs/` — the implementation contract
+4. `Transcripts/` — supporting evidence, when 1–3 are silent
 
-**Wszystko poza tą listą to notatki robocze, nie źródło prawdy.**
-
----
-
-## 3. Co ręczne, co automatyczne — tabela zbiorcza
-
-| Czynność | Kto | Kiedy |
-|---|---|---|
-| Napisanie wpisu DEC | **człowiek** (agent proponuje draft) | przy każdej decyzji zakresowej, kosztowej lub architektonicznej |
-| Podsumowanie transkryptu | agent (`/transcript-extract`) | po callu z klientem |
-| Wybór, które drafty DEC zastosować | **człowiek** | krok 4 `/transcript-extract` |
-| Wybór `Odwraca:` vs `Zmienia:` | **człowiek** | gdy decyzja dotyka wcześniejszej |
-| Wyliczenie statusu (aktywna / odwrócona) | maszyna (`lib/status.mjs`) | przy każdym `index` i `check` |
-| Wygenerowanie tabeli w `CLAUDE.md` | maszyna (`knowledge.mjs index`) | po każdej edycji `DECISIONS.md` |
-| Uruchomienie `index` | **człowiek** (lokalnie, przed commitem) | po edycji `DECISIONS.md` |
-| Sprawdzenie, czy `CLAUDE.md` jest świeży | maszyna (bramka `index-fresh`) | każdy PR i push na `main` |
-| Sprawdzenie kompletności wpisów | maszyna (bramka `integrity`) | każdy PR i push na `main` |
-| Przypomnienie „ta zmiana wymaga decyzji" | maszyna (bramka `decision-required`) | PR ruszający ścieżki decyzyjne |
-| Reakcja na czerwoną bramkę | **człowiek** | dopisuje wpis albo etykietę `no-decision` |
-| Audyt dryfu systemowego | agent (`/knowledge-audit`) | raz na sprint, uruchamiany ręcznie |
-| Rozszerzenie ścieżek decyzyjnych | **człowiek** (właściciel) | gdy audyt pokaże, że furtka się normalizuje |
-
-**Zasada nadrzędna:** żadne narzędzie w tym kicie nie zapisuje do `docs/DECISIONS.md`
-bez jawnej akceptacji człowieka. Jedyny plik, który agent zapisuje samodzielnie, to
-podsumowanie transkryptu w `Transcripts/` — archiwum, nie źródło decyzji.
+**Anything outside this list is a working note, not a source of truth.**
 
 ---
 
-## 4. Instalacja
+## 3. What is manual, what is automatic — a summary table
 
-Sześć kroków, ~15 minut. Kroki 1–5 są obowiązkowe, krok 6 (plugin Claude Code) opcjonalny.
-
-### Wymagania wstępne
-
-| Czego potrzebujesz | Po co | Jak sprawdzić |
+| Action | Who | When |
 |---|---|---|
-| Node.js ≥ 20 | CLI używa `node:test` i natywnych ESM | `node --version` |
-| repo na GitHubie z włączonymi Actions | bramki biegną jako workflow | Settings → Actions |
-| uprawnienia **admina** do repo | branch protection (krok 4) | Settings → Branches jest widoczne |
-| `gh` CLI (opcjonalnie) | szybsze ustawienie branch protection | `gh auth status` |
+| Writing a DEC entry | **human** (the agent proposes a draft) | on every scope, cost or architecture decision |
+| Summarising a transcript | agent (`/transcript-extract`) | after a client call |
+| Choosing which DEC drafts to apply | **human** | step 4 of `/transcript-extract` |
+| Choosing `Reverses:` vs `Changes:` | **human** | when a decision touches an earlier one |
+| Deriving status (active / reversed) | machine (`lib/status.mjs`) | on every `index` and `check` |
+| Generating the table in `CLAUDE.md` | machine (`knowledge.mjs index`) | after every edit of `DECISIONS.md` |
+| Running `index` | **human** (locally, before committing) | after editing `DECISIONS.md` |
+| Checking that `CLAUDE.md` is fresh | machine (the `index-fresh` gate) | every PR and push to `main` |
+| Checking entry completeness | machine (the `integrity` gate) | every PR and push to `main` |
+| The reminder "this change needs a decision" | machine (the `decision-required` gate) | a PR touching decision paths |
+| Reacting to a red gate | **human** | adds an entry or the `no-decision` label |
+| Auditing systemic drift | agent (`/knowledge-audit`) | once a sprint, run by hand |
+| Widening the decision paths | **human** (the owner) | when the audit shows the back door is being normalised |
 
-Kit nie ma **żadnych** zależności — ani runtime'owych, ani deweloperskich. Uruchamia się
-go wprost przez `node`, bez `npm install` i bez `npx`.
+**The overriding rule:** no tool in this kit writes to `docs/DECISIONS.md` without a human
+explicitly approving it. The only file an agent writes on its own is the transcript summary
+in `Transcripts/` — an archive, not a source of decisions.
 
-> **Dlaczego nie `npx github:…`.** Wcześniejsze wersje tej instrukcji używały
-> `npx --yes github:monterail/repobrain#<SHA>`. Ta droga **wywala się w GitHub Actions**
-> błędem `GitFetcher requires an Arborist constructor` — to defekt npm 10.x, czyli
-> dokładnie tej wersji, którą `actions/setup-node` instaluje razem z node 20 i 22.
-> Ponieważ kit nie ma zależności, npm był w tym łańcuchu wyłącznie pośrednikiem:
-> usunięcie go naprawia błąd i skraca joba. Szczegóły w [§13](#13-rozwój-kitu).
+---
 
-### Krok 1 — ustal pełny SHA
+## 4. Installation
 
-Workflow **pinuje commit po pełnym SHA, nigdy po tagu**. Tagi gita są mutowalne: każdy
-z prawem pushu do repo kitu mógłby przesunąć `v1.0.0` i wykonać dowolny kod — z flagą
-`--yes` — w CI wszystkich projektów agencji.
+Six steps, ~15 minutes. Steps 1–5 are mandatory, step 6 (the Claude Code plugin) is optional.
+
+### Prerequisites
+
+| What you need | What for | How to check |
+|---|---|---|
+| Node.js ≥ 20 | the CLI uses `node:test` and native ESM | `node --version` |
+| a GitHub repo with Actions enabled | the gates run as a workflow | Settings → Actions |
+| **admin** rights on the repo | branch protection (step 4) | Settings → Branches is visible |
+| `gh` CLI (optional) | a faster way to set branch protection | `gh auth status` |
+
+The kit has **no** dependencies — neither runtime nor development ones. You run it straight
+through `node`, with no `npm install` and no `npx`.
+
+> **Why not `npx github:…`.** Earlier versions of these instructions used
+> `npx --yes github:monterail/repobrain#<SHA>`. That route **blows up in GitHub Actions**
+> with `GitFetcher requires an Arborist constructor` — a defect in npm 10.x, which is
+> exactly the version `actions/setup-node` installs alongside node 20 and 22.
+> Since the kit has no dependencies, npm was purely a middleman in that chain:
+> removing it fixes the error and shortens the job. Details in [§13](#13-developing-the-kit).
+
+### Step 1 — determine the full SHA
+
+The workflow **pins the commit by full SHA, never by tag**. Git tags are mutable: anyone with
+push rights to the kit repo could move `v1.0.0` and execute arbitrary code — with the `--yes`
+flag — in the CI of every project in the agency.
 
 ```bash
 git ls-remote https://github.com/monterail/repobrain.git main
-# 85d7898f…  refs/heads/main   ← ten SHA wklejasz w krokach 2 i 3
+# 85d7898f…  refs/heads/main   ← this is the SHA you paste in steps 2 and 3
 ```
 
-Zapisz go sobie — pojawi się w trzech miejscach. Dalej oznaczam go jako `<SHA>`.
+Write it down — it shows up in three places. Below it is referred to as `<SHA>`.
 
-### Krok 2 — uruchom instalator
+### Step 2 — run the installer
 
-Pobierz kit po ustalonym SHA i uruchom instalator w katalogu swojego projektu:
+Fetch the kit at the SHA you determined and run the installer in your project directory:
 
 ```bash
 git clone https://github.com/monterail/repobrain.git ~/.repobrain
 git -C ~/.repobrain checkout <SHA>
 
-cd /ścieżka/do/projektu
+cd /path/to/project
 node ~/.repobrain/bin/knowledge.mjs init
 ```
 
-CLI zawsze działa na **bieżącym katalogu roboczym**, niezależnie od tego, skąd
-uruchomiłeś plik — dlatego kit może mieszkać gdziekolwiek.
+The CLI always operates on the **current working directory**, no matter where you ran the
+file from — which is why the kit can live anywhere.
 
-Z pluginem Claude Code równoważnie: `/knowledge-init`.
+With the Claude Code plugin the equivalent is: `/knowledge-init`.
 
-Instalator **nigdy nie nadpisuje istniejących plików** — raportuje, co dołożył (`+`),
-a co pominął (`=`). Dzięki tej regule ten sam kod obsługuje repo puste i dwuletnie,
-bez osobnego trybu „retrofit".
+The installer **never overwrites existing files** — it reports what it added (`+`) and what it
+skipped (`=`). Thanks to that rule the same code handles an empty repo and a two-year-old one,
+with no separate "retrofit" mode.
 
 ```
   + docs/DECISIONS.md
   + .github/workflows/knowledge.yml
-  ~ CLAUDE.md (dopisano sekcję Źródła prawdy)
+  ~ CLAUDE.md (appended the Sources of truth section)
 ```
 
-| Plik | Zawartość | Jeśli już istnieje |
+| File | Content | If it already exists |
 |---|---|---|
-| `docs/DECISIONS.md` | opis formatu + `DEC-001` jako działający przykład | pomijany w całości |
-| `.github/workflows/knowledge.yml` | workflow ściągający kit przez `actions/checkout` z pinem po SHA | pomijany w całości |
-| `CLAUDE.md` | reguła pierwszeństwa + pusta para znaczników | **dopisywany na końcu**, nie nadpisywany |
+| `docs/DECISIONS.md` | the format description + `DEC-001` as a working example | skipped entirely |
+| `.github/workflows/knowledge.yml` | the workflow that fetches the kit via `actions/checkout` pinned by SHA | skipped entirely |
+| `CLAUDE.md` | the precedence rule + an empty marker pair | **appended at the end**, not overwritten |
 
-Jeśli `CLAUDE.md` już zawiera znaczniki `WYGENEROWANE:decyzje`, instalator też ich nie
-rusza — wypisze `= CLAUDE.md (znaczniki już są, pominięto)`.
+If `CLAUDE.md` already contains the `GENERATED:decisions` markers, the installer leaves those
+alone too — it prints `= CLAUDE.md (markers already present, skipped)`.
 
-`Transcripts/` i `HYPOTHESES.md` **nie są scaffoldowane** — powstają przy pierwszym
-użyciu `/transcript-extract`. Pusty katalog to sierota, a sieroty to problem, który
-kit ma likwidować.
+`Transcripts/` and `HYPOTHESES.md` are **not scaffolded** — they come into existence the first
+time `/transcript-extract` is used. An empty directory is an orphan, and orphans are the very
+problem this kit exists to remove.
 
-> **Instalacja przerwana w połowie?** Instalator wypisze, które pliki zdążyły powstać,
-> i każe posprzątać ręcznie. Nie ma automatycznego rollbacku: kasowanie plików w cudzym
-> repo jest gorszym domyślnym zachowaniem niż komunikat.
+> **Installation interrupted halfway?** The installer prints which files it managed to create
+> and tells you to clean up by hand. There is no automatic rollback: deleting files in somebody
+> else's repo is a worse default than a message.
 
-### Krok 3 — uzupełnij trzy rzeczy w workflow
+### Step 3 — fill in three things in the workflow
 
-Instalator nie może ich zgadnąć. **Dopóki tego nie zrobisz, część bramek jest wyłączona.**
+The installer cannot guess them. **Until you do, some of the gates are disabled.**
 
-Otwórz `.github/workflows/knowledge.yml` i podmień trzy wartości:
+Open `.github/workflows/knowledge.yml` and replace three values:
 
 ```yaml
-# PRZED (prosto z instalatora)
+# BEFORE (straight from the installer)
       - uses: actions/checkout@v4
         with:
           repository: monterail/repobrain
-          ref: <PELNY_SHA>                    # ①
+          ref: <FULL_SHA>                     # ①
           path: .repobrain
       …
       - run: node .repobrain/bin/knowledge.mjs check
-             --paths 'docs/specs/**,**/pricing*'                                  # ②
-             --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>' # ③
+             --paths 'docs/specs/**,**/pricing*'                          # ②
+             --client-names '<comma-separated client names, e.g. Smith, Jones>' # ③
 
-# PO (uzupełnione)
+# AFTER (filled in)
       - uses: actions/checkout@v4
         with:
           repository: monterail/repobrain
@@ -213,56 +213,56 @@ Otwórz `.github/workflows/knowledge.yml` i podmień trzy wartości:
       …
       - run: node .repobrain/bin/knowledge.mjs check
              --paths 'docs/specs/**,docs/api-contract.md,**/pricing*'
-             --client-names 'Nowak, Wiśniewska'
+             --client-names 'Jones, Whitfield'
 ```
 
-| # | Co | Konsekwencja pominięcia |
+| # | What | Consequence of skipping it |
 |---|---|---|
-| ① | **`ref:`** → pełny SHA z kroku 1 | checkout wywali się na nieistniejącej referencji |
-| ② | **`--paths`** → ścieżki decyzyjne tego projektu | bramka `decision-required` nie chroni niczego |
-| ③ | **`--client-names`** → nazwiska osób decyzyjnych po stronie klienta | `integrity` nigdy nie wymaga `Źródło:` dla decyzji klienta |
+| ① | **`ref:`** → the full SHA from step 1 | the checkout fails on a non-existent reference |
+| ② | **`--paths`** → this project's decision paths | the `decision-required` gate protects nothing |
+| ③ | **`--client-names`** → the names of the decision-makers on the client side | `integrity` never requires `Source:` for a client decision |
 
-> **Nie zmieniaj kolejności kroków.** Checkout projektu musi być pierwszy: `actions/checkout`
-> domyślnie czyści katalog docelowy przez `git clean -ffdx`, więc odwrotna kolejność
-> skasowałaby ściągnięty wcześniej kit.
+> **Do not change the order of the steps.** The project checkout must come first:
+> `actions/checkout` cleans the target directory by default with `git clean -ffdx`, so the
+> reverse order would wipe out the kit fetched earlier.
 
-**Jak dobrać `--paths`.** Zacznij **wąsko**: `docs/specs/**` i pliki cenowe. Nie dodawaj
-katalogu migracji na starcie — większość migracji nie ma za sobą decyzji klienckiej,
-a łapanie ich zamienia etykietę `no-decision` w odruch. Ścieżki rozszerza się później,
-gdy audyt pokaże, że coś ważnego przechodzi bez wpisu. Składnia globów: `*` nie
-przekracza `/`, `**` przekracza.
+**How to choose `--paths`.** Start **narrow**: `docs/specs/**` and pricing files. Do not add the
+migrations directory on day one — most migrations have no client decision behind them, and
+catching them turns the `no-decision` label into a reflex. You widen the paths later, when the
+audit shows something important is getting through without an entry. Glob syntax: `*` does not
+cross `/`, `**` does.
 
-**Jak dobrać `--client-names`.** Dopasowanie jest **po podciągu, bez wielkości liter**,
-i celowo luźne — `Nowak` trafi też w `Nowakowski`. Kierunek błędu jest bezpieczny:
-fałszywy alarm („wymagamy `Źródło:` tam, gdzie nie trzeba") jest tańszy niż przeoczona
-decyzja klienta bez dowodu.
+**How to choose `--client-names`.** Matching is **by substring, case-insensitive**, and
+deliberately loose — `Jones` also hits `Jonesborough`. The direction of the error is safe:
+a false alarm ("we demand `Source:` where it is not needed") is cheaper than an overlooked
+client decision with no evidence.
 
-**Bezpiecznik.** Jeśli zostawisz niepodmieniony placeholder (`<nazwiska klienta…>`),
-CLI potraktuje go jak brak flagi i **głośno to wypisze**:
+**The safety catch.** If you leave the placeholder unreplaced (`<comma-separated client names…>`),
+the CLI treats it as a missing flag and **says so out loud**:
 
 ```
-ℹ reguła „decyzja klienta wymaga pola Źródło" jest wyłączona — --client-names zawiera
-  niepodmieniony placeholder z konfiguracji, traktowany jak brak flagi.
+ℹ the "a client decision requires the Source field" rule is disabled — --client-names still
+  holds the unreplaced placeholder from the config, treated as no flag at all.
 ```
 
-Cicha śmierć reguły przy zielonym CI jest gorsza niż jej brak. Z tego samego powodu CLI
-odrzuca nieznane flagi — literówka `--pahts` zatrzymuje build, zamiast zostać zignorowana.
+A rule dying quietly under a green CI is worse than no rule. For the same reason the CLI
+rejects unknown flags — the typo `--pahts` stops the build instead of being ignored.
 
-### Krok 4 — włącz branch protection
+### Step 4 — enable branch protection
 
-**To jest warunek instalacji, nie zalecenie.** Bez „require branches to be up to date"
-dwa PR-y mogą dodać wpis o tym samym numerze DEC i auto-zmergować się (wstawiają tekst
-w różnych miejscach pliku, więc git nie widzi konfliktu). Drugi merge czerwieni `main`,
-a naprawa przez przenumerowanie unieważnia referencje zdążone już w Slacku i w polach
-`Odwraca:`.
+**This is an installation precondition, not a recommendation.** Without "require branches to be
+up to date", two PRs can add an entry with the same DEC number and auto-merge (they insert text
+in different places in the file, so git sees no conflict). The second merge turns `main` red,
+and fixing it by renumbering invalidates references that already went out in Slack and in
+`Reverses:` fields.
 
-Przez UI: **Settings → Branches → Add branch protection rule** dla `main`:
+Through the UI: **Settings → Branches → Add branch protection rule** for `main`:
 
 - ✅ Require status checks to pass before merging
-- ✅ **Require branches to be up to date before merging** ← to jest ten krytyczny
-- w liście checków wybierz `knowledge`
+- ✅ **Require branches to be up to date before merging** ← this is the critical one
+- in the list of checks pick `knowledge`
 
-Przez `gh` CLI:
+Through the `gh` CLI:
 
 ```bash
 gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'JSON'
@@ -275,63 +275,63 @@ gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'JSON'
 JSON
 ```
 
-`"strict": true` to dokładnie „require branches to be up to date".
+`"strict": true` is exactly "require branches to be up to date".
 
-### Krok 5 — pierwsza generacja i commit
+### Step 5 — first generation and commit
 
 ```bash
 node ~/.repobrain/bin/knowledge.mjs index
 ```
 
 ```
-✓ CLAUDE.md zaktualizowany — 1 aktywnych, 0 w historii
+✓ CLAUDE.md updated — 1 active, 0 in history
 ```
 
-Zacommituj **oba pliki razem** — rozdzielenie ich na dwa commity da czerwoną bramkę
-`index-fresh` na tym pierwszym:
+Commit **both files together** — splitting them into two commits gives a red `index-fresh`
+gate on the first one:
 
 ```bash
 git add docs/DECISIONS.md CLAUDE.md .github/workflows/knowledge.yml
-git commit -m "chore: instalacja repoBrain"
+git commit -m "chore: install repoBrain"
 ```
 
-### Weryfikacja — czy na pewno działa
+### Verification — is it actually working
 
-Uruchom bramki lokalnie, dokładnie tak, jak zrobi to CI:
+Run the gates locally, exactly the way CI will:
 
 ```bash
 node ~/.repobrain/bin/knowledge.mjs check \
-  --paths 'docs/specs/**' --client-names 'Nowak'
+  --paths 'docs/specs/**' --client-names 'Jones'
 ```
 
 ```
-✓ repoBrain — bramki zielone: integrity, index-fresh
-  (pominięte: decision-required (brak kontekstu PR))
+✓ repoBrain — gates green: integrity, index-fresh
+  (skipped: decision-required (no PR context))
 ```
 
-Lokalnie `decision-required` zawsze jest pomijana — potrzebuje `GITHUB_EVENT_PATH`
-i kontekstu pull requesta. **To jest oczekiwane.** Żeby sprawdzić ją naprawdę, zrób
-próbny PR dotykający ścieżki decyzyjnej i zobacz, czy zapali się na czerwono.
+Locally `decision-required` is always skipped — it needs `GITHUB_EVENT_PATH` and pull request
+context. **That is expected.** To check it for real, open a trial PR touching a decision path
+and see whether it goes red.
 
-Checklista po instalacji:
+Post-installation checklist:
 
-- [ ] `knowledge.mjs check` lokalnie zielone
-- [ ] workflow przeszedł na pierwszym PR (zakładka Actions)
-- [ ] w logu CI **nie ma** komunikatu o wyłączonej regule `--client-names`
-- [ ] w logu CI bramka `decision-required` jest w „zielonych", nie w „pominiętych"
-- [ ] próbny PR w `docs/specs/**` bez wpisu DEC → czerwony
-- [ ] ten sam PR z etykietą `no-decision` → zielony (i build się retriggerował)
-- [ ] `main` ma branch protection ze `strict: true`
-- [ ] `DECISIONS.md` ma przypisanego właściciela (patrz §11)
+- [ ] `knowledge.mjs check` green locally
+- [ ] the workflow passed on the first PR (Actions tab)
+- [ ] the CI log **does not** carry the message about the disabled `--client-names` rule
+- [ ] in the CI log the `decision-required` gate is among the "green" ones, not the "skipped" ones
+- [ ] a trial PR in `docs/specs/**` with no DEC entry → red
+- [ ] the same PR with the `no-decision` label → green (and the build retriggered)
+- [ ] `main` has branch protection with `strict: true`
+- [ ] `DECISIONS.md` has an assigned owner (see §11)
 
-### Krok 6 — plugin Claude Code (opcjonalnie)
+### Step 6 — the Claude Code plugin (optional)
 
-Plugin daje zespołowi komendy `/knowledge-init`, `/transcript-extract` i skille
-`decisions-format`, `knowledge-audit`. **Nie jest wymagany** — bramki CI działają
-niezależnie od Claude Code, taki był niezmiennik architektoniczny.
+The plugin gives the team the `/knowledge-init` and `/transcript-extract` commands and the
+`decisions-format`, `knowledge-audit` skills. It is **not required** — the CI gates work
+independently of Claude Code, which was the architectural invariant.
 
-Najprostsza droga dzisiaj: skopiuj zawartość `.claude-plugin/` do katalogu `.claude/`
-projektu docelowego i zacommituj — skille i komendy działają wtedy dla całego zespołu:
+The simplest route today: copy the contents of `.claude-plugin/` into the target project's
+`.claude/` directory and commit it — the skills and commands then work for the whole team:
 
 ```bash
 mkdir -p .claude/skills .claude/commands
@@ -339,108 +339,143 @@ cp -r ~/.repobrain/.claude-plugin/skills/* .claude/skills/
 cp -r ~/.repobrain/.claude-plugin/commands/* .claude/commands/
 ```
 
-W skopiowanych plikach podmień `<SCIEZKA_DO_KITU>` na miejsce, w którym trzymasz kit
-(np. `~/.repobrain`) — komendy wołają to samo CLI, co Ty z ręki.
+In the copied files replace `<PATH_TO_KIT>` with wherever you keep the kit (e.g. `~/.repobrain`)
+— the commands call the same CLI you do by hand.
 
-> Repo nie ma jeszcze `.claude-plugin/marketplace.json`, więc instalacja przez
-> `/plugin marketplace add` nie zadziała. To znany brak, nie błąd konfiguracji po Twojej stronie.
+> The repo does not have a `.claude-plugin/marketplace.json` yet, so installing through
+> `/plugin marketplace add` will not work. That is a known gap, not a misconfiguration on your side.
 
-### Aktualizacja kitu
+### Updating the kit
 
-Poprawka w repoBrain nie propaguje się sama — pin po SHA jest tego świadomym kosztem.
-Żeby podnieść wersję w projekcie: weź nowy SHA (krok 1), podmień `ref:` w
-`.github/workflows/knowledge.yml`, zrób PR. Zielony build na tym PR jest potwierdzeniem,
-że nowa wersja nie psuje istniejących wpisów.
+A fix in repoBrain does not propagate on its own — that is the deliberate cost of pinning by
+SHA. To bump the version in a project: take the new SHA (step 1), replace `ref:` in
+`.github/workflows/knowledge.yml`, open a PR. A green build on that PR is the confirmation that
+the new version does not break the existing entries.
 
-Lokalnie odśwież swoją kopię kitu do tego samego SHA:
+Locally, refresh your copy of the kit to the same SHA:
 
 ```bash
-git -C ~/.repobrain fetch && git -C ~/.repobrain checkout <NOWY_SHA>
+git -C ~/.repobrain fetch && git -C ~/.repobrain checkout <NEW_SHA>
 ```
 
-**SHA w CI jest źródłem prawdy, kopia lokalna to wygoda.** Jeśli się rozjadą, bramka
-`index-fresh` to wyłapie — wygenerujesz blok starszą wersją, a CI porówna go z wynikiem
-nowszej. Rozjazd nie przejdzie po cichu.
+**The SHA in CI is the source of truth, the local copy is a convenience.** If they diverge, the
+`index-fresh` gate catches it — you generate the block with an older version and CI compares it
+against the output of a newer one. Divergence does not pass silently.
+
+### Migrating an installation from before the English switch
+
+The DEC vocabulary used to be Polish. Repos installed before that change carry entries with
+`Temat:`/`Kontekst:`/`Decyzja:`/`Konsekwencje:`/`Podjął:` and a `WYGENEROWANE:decyzje` block in
+`CLAUDE.md`. The current parser knows only the English names — there is no compatibility layer,
+deliberately, because a permanent dual vocabulary is the same "two stores" defect the kit exists
+to remove. Bumping `ref:` to a post-switch SHA therefore requires a one-off rewrite:
+
+| Old | New |
+|---|---|
+| `**Temat:**` | `**Topic:**` |
+| `**Kontekst:**` | `**Context:**` |
+| `**Decyzja:**` | `**Decision:**` |
+| `**Konsekwencje:**` | `**Consequences:**` |
+| `**Podjął:**` | `**Decided by:**` |
+| `**Odwraca:**` | `**Reverses:**` |
+| `**Zmienia:**` | `**Changes:**` |
+| `**Obszar:**` | `**Area:**` |
+| `**Źródło:**` | `**Source:**` |
+| `**Scope:** w cenie` | `**Scope:** in scope` |
+| `**Scope:** do wyceny` | `**Scope:** needs estimate` |
+| placeholders `[data]`, `[uzupełnij]` | `[date]`, `[fill in]` |
+
+Then delete the whole old `WYGENEROWANE:decyzje` block from `CLAUDE.md` (both markers included),
+run `init` to append the new section, and run `index` to fill it in:
+
+```bash
+node ~/.repobrain/bin/knowledge.mjs init    # appends the new marker pair
+node ~/.repobrain/bin/knowledge.mjs index   # generates the block
+node ~/.repobrain/bin/knowledge.mjs check   # must be green before the PR
+```
+
+Do the rewrite and the `ref:` bump **in one PR**. Split across two, the first one is red either
+way: an old kit does not understand the new entries, and a new kit does not understand the old ones.
 
 ---
 
-## 5. Jak powstaje dokumentacja — trzy ścieżki
+## 5. How documentation gets written — three paths
 
-### Ścieżka A — po callu z klientem: `/transcript-extract`
+### Path A — after a client call: `/transcript-extract`
 
-Główna ścieżka. Jedna komenda, cztery kroki, człowiek akceptuje każdy zapis do źródła.
+The main path. One command, four steps, a human approves every write to the source.
 
 ```
-surowy zapis (PDF / VTT, nazwa od dostawcy)
+raw recording (PDF / VTT, named by the vendor)
    │
-   ▼  /transcript-extract <ścieżka>
+   ▼  /transcript-extract <path>
    │
-[1] podsumowanie → Transcripts/YYYY-MM-DD-slug.md      ← JEDYNY automatyczny zapis
-   │   (kontekst, decyzje, zadania, otwarte pytania, cytaty)
+[1] summary → Transcripts/YYYY-MM-DD-slug.md          ← THE ONLY automatic write
+   │   (context, decisions, tasks, open questions, quotes)
    │
-[2] klasyfikacja pozycji wg TRWAŁOŚCI, nie wg typu treści:
+[2] items classified by LIFESPAN, not by content type:
    │
-   ├─ decyzja       → draft wpisu DEC          trwała, wersjonowana
-   ├─ niepewność    → HYPOTHESES.md            do rozstrzygnięcia
-   ├─ zadanie       → lista do wklejenia w Jirę    NIE do repo
-   └─ cytat         → zostaje w podsumowaniu    archiwum
+   ├─ decision      → a DEC entry draft         durable, versioned
+   ├─ uncertainty   → HYPOTHESES.md             to be settled
+   ├─ task          → a list to paste into Jira    NOT into the repo
+   └─ quote         → stays in the summary      archive
    │
-[3] drafty DEC pokazane w odpowiedzi — NIE zapisane na dysk
+[3] DEC drafts shown in the reply — NOT written to disk
    │
-[4] człowiek wybiera, co zastosować
-   │   → dopisanie na końcu docs/DECISIONS.md
+[4] a human picks what to apply
+   │   → appended at the end of docs/DECISIONS.md
    │   → knowledge.mjs index
-   │   → commit obu plików
+   │   → commit both files
    ▼
 ```
 
-**Dlaczego zadania nie trafiają do repo.** W transkrypcie decyzja i zadanie wyglądają
-podobnie. Różni je cykl życia: decyzja obowiązuje, aż ktoś ją odwróci; zadanie umiera
-po wykonaniu. Zadania w `docs/` zamieniają się w listy TODO, których nikt nie zamyka.
+**Why tasks do not go into the repo.** In a transcript a decision and a task look alike. What
+separates them is lifecycle: a decision holds until someone reverses it; a task dies once it is
+done. Tasks in `docs/` turn into TODO lists nobody ever closes.
 
-**Niepewność ma bezpiecznik.** Komenda ma zakaz zmyślania — cokolwiek niejasne oznacza
-`[verify]`. To jeden z placeholderów blokujących CI, więc niepewność wyciągnięta
-z transkryptu fizycznie nie przejdzie do merge'a.
+**Uncertainty has a safety catch.** The command is forbidden from inventing anything — whatever
+is unclear gets marked `[verify]`. That is one of the placeholders that block CI, so an
+uncertainty pulled out of a transcript physically cannot reach a merge.
 
-### Ścieżka B — decyzja przy zmianie kodu: bramka `decision-required`
+### Path B — a decision alongside a code change: the `decision-required` gate
 
 ```
-PR rusza docs/specs/** albo **/pricing*
+a PR touches docs/specs/** or **/pricing*
    │
-   ├─ PR rusza też docs/DECISIONS.md?         → zielono, przechodzi
-   ├─ PR ma etykietę `no-decision`?           → zielono, przechodzi (furtka)
-   └─ ani jedno, ani drugie                   → CZERWONO, merge zablokowany
-                                                 │
-                                                 ▼
-                              człowiek dopisuje wpis DEC albo świadomie
-                              oznacza PR etykietą `no-decision`
+   ├─ does the PR touch docs/DECISIONS.md too?  → green, passes
+   ├─ does the PR carry the `no-decision` label? → green, passes (the back door)
+   └─ neither of the two                         → RED, the merge is blocked
+                                                    │
+                                                    ▼
+                                 a human adds a DEC entry or deliberately
+                                 labels the PR `no-decision`
 ```
 
-Bramka **nie pisze wpisu** — tylko nie pozwala przejść dalej bez decyzji człowieka.
-Etykieta `no-decision` jest legalną furtką (nie każda zmiana specyfikacji to decyzja
-projektowa), ale jej użycia są liczone przez `/knowledge-audit`.
+The gate **does not write the entry** — it merely refuses to let things through without a human
+decision. The `no-decision` label is a legitimate back door (not every spec change is a project
+decision), but its uses are counted by `/knowledge-audit`.
 
-### Ścieżka C — ręcznie, ze skillem `decisions-format`
+### Path C — by hand, with the `decisions-format` skill
 
-Decyzja, która nie wyszła ani z transkryptu, ani z PR-a — np. ustalenie na Slacku.
-Piszesz wpis wprost do `docs/DECISIONS.md`. Skill `decisions-format` ładuje się w Claude Code
-automatycznie, gdy piszesz lub edytujesz wpis, i pilnuje formatu, zanim zrobi to CI.
+A decision that came out of neither a transcript nor a PR — an agreement on Slack, say. You write
+the entry straight into `docs/DECISIONS.md`. The `decisions-format` skill loads automatically in
+Claude Code when you write or edit an entry, and it enforces the format before CI does.
 
-Po każdej ścieżce ten sam finał:
+Every path ends the same way:
 
 ```bash
 node ~/.repobrain/bin/knowledge.mjs index
 git add docs/DECISIONS.md CLAUDE.md && git commit
 ```
 
-Żeby nie przepisywać ścieżki po każdej edycji, dodaj alias w projekcie —
-w `package.json`:
+To avoid retyping the path after every edit, add an alias in the project —
+in `package.json`:
 
 ```json
 "scripts": { "knowledge:index": "node ~/.repobrain/bin/knowledge.mjs index" }
 ```
 
-albo w `Makefile`, jeśli projekt nie jest nodowy:
+or in a `Makefile`, if the project is not a node one:
 
 ```make
 knowledge-index:
@@ -449,353 +484,352 @@ knowledge-index:
 
 ---
 
-## 6. Routing dokumentów zespołowych
+## 6. Routing team documents
 
-Zespół produkuje więcej niż transkrypty z callów: BA papers, notatki z refinementów,
-dokumentację architektury, research. Ta sekcja mówi, gdzie każda z tych rzeczy ma żyć.
+A team produces more than call transcripts: BA papers, refinement notes, architecture
+documentation, research. This section says where each of those should live.
 
-### Jedno pytanie rozstrzyga wszystko
+### One question settles everything
 
-> **Czy ta rzecz obowiązuje, dopóki ktoś jej nie odwróci?**
+> **Does this thing hold until someone reverses it?**
 
 ```
-                    ┌─ TAK ──────────────▶ wpis DEC w docs/DECISIONS.md
+                    ┌─ YES ──────────────▶ a DEC entry in docs/DECISIONS.md
                     │
-czy obowiązuje      ├─ NIE, ale jest dowodem, skąd wzięła się decyzja
-aż do odwrócenia?   │                    ▶ Transcripts/YYYY-MM-DD-slug.md
+does it hold        ├─ NO, but it is evidence of where a decision came from
+until reversed?     │                    ▶ Transcripts/YYYY-MM-DD-slug.md
                     │
-                    ├─ NIE, to kontrakt: co dokładnie budujemy
+                    ├─ NO, it is a contract: what exactly we are building
                     │                    ▶ docs/specs/
                     │
-                    ├─ NIE, to niepewność do rozstrzygnięcia
+                    ├─ NO, it is an uncertainty to be settled
                     │                    ▶ HYPOTHESES.md
                     │
-                    └─ NIE, po prostu się przyda
-                                         ▶ zwykłe docs/, bez ceremonii
+                    └─ NO, it is simply useful
+                                         ▶ ordinary docs/, no ceremony
 ```
 
-**Kryterium to cykl życia, nie typ dokumentu.** Decyzja i zadanie wyglądają w notatce
-podobnie; różni je to, że decyzja obowiązuje aż ktoś ją odwróci, a zadanie umiera
-po wykonaniu.
+**The criterion is lifecycle, not document type.** A decision and a task look alike in a note;
+what separates them is that a decision holds until someone reverses it, while a task dies once
+it is done.
 
-### Tabela routingu
+### Routing table
 
-| Dokument | Gdzie | Dlaczego |
+| Document | Where | Why |
 |---|---|---|
-| BA paper definiujący **co budujemy** | `docs/specs/` + wpis DEC na rozstrzygnięcia sporne | kontrakt implementacyjny — poziom 3 reguły pierwszeństwa |
-| BA paper **analityczny** (opcje, porównania, research) | zwykłe `docs/`; wynik → wpis DEC | zestarzeje się w chwili, gdy decyzja zapadnie |
-| Notatki z refinementu | `Transcripts/YYYY-MM-DD-refinement-slug.md`, `Typ: wewnętrzne` | ten sam cykl życia co transkrypt: dowód, upstream decyzji |
-| Warsztat discovery | `Transcripts/…`, `Typ: discovery` | jw. |
-| Ustalenia z dostawcą | `Transcripts/…`, `Typ: vendor` | jw. |
-| Otwarte pytania z refinementu | `HYPOTHESES.md` | mają zostać rozstrzygnięte, nie zarchiwizowane |
-| Ustalenia „to jest w cenie / to change request" | wpis DEC ze `Scope:` | dokładnie to, przed czym `Scope:` chroni w sporze |
-| Decyzja architektoniczna (ADR-owa) | wpis DEC — **nie osobny ADR** | dublowanie magazynów to defekt, który kit likwiduje |
-| Estymaty, harmonogram | poza repo (Jira) — konsekwencje → pole `Konsekwencje:` we wpisie DEC | przeterminowują się szybciej niż PR |
-| Action items z dowolnego spotkania | Jira — **nie repo** | listy TODO w `docs/` to listy, których nikt nie zamyka |
-| Runbook, onboarding, README modułu | zwykłe `docs/` | nikt nie musi pilnować ich świeżości |
+| A BA paper defining **what we are building** | `docs/specs/` + a DEC entry for the contested calls | the implementation contract — level 3 of the precedence rule |
+| An **analytical** BA paper (options, comparisons, research) | ordinary `docs/`; the outcome → a DEC entry | it goes stale the moment the decision is made |
+| Refinement notes | `Transcripts/YYYY-MM-DD-refinement-slug.md`, `Type: internal` | the same lifecycle as a transcript: evidence, upstream of a decision |
+| A discovery workshop | `Transcripts/…`, `Type: discovery` | same as above |
+| Agreements with a vendor | `Transcripts/…`, `Type: vendor` | same as above |
+| Open questions from a refinement | `HYPOTHESES.md` | they are meant to be settled, not archived |
+| "this is in scope / this is a change request" calls | a DEC entry with `Scope:` | exactly what `Scope:` protects you from in a dispute |
+| An architectural decision (ADR-shaped) | a DEC entry — **not a separate ADR** | duplicating stores is the defect this kit removes |
+| Estimates, schedule | outside the repo (Jira) — the consequences → the `Consequences:` field of a DEC entry | they expire faster than a PR |
+| Action items from any meeting | Jira — **not the repo** | TODO lists in `docs/` are lists nobody closes |
+| A runbook, onboarding, a module README | ordinary `docs/` | nobody has to police their freshness |
 
-### Trzy rzeczy, które działają, choć nazwy sugerują inaczej
+### Three things that work even though the names suggest otherwise
 
-**1. `Transcripts/` nie jest tylko dla klienta.** Szablon podsumowania ma pole `Typ:`
-z czterema wartościami — `klient / wewnętrzne / discovery / vendor`. Refinement to
-`wewnętrzne`, warsztat BA to `discovery`. Katalog trzyma podsumowania **dowolnego
-spotkania**, nie tylko rozmów z klientem.
+**1. `Transcripts/` is not only for the client.** The summary template has a `Type:` field with
+four values — `client / internal / discovery / vendor`. A refinement is `internal`, a BA workshop
+is `discovery`. The directory holds summaries of **any meeting**, not only client calls.
 
-**2. `/transcript-extract` przyjmuje każdy plik.** Notatki z refinementu, zrzut z Miro,
-podsumowanie z Confluence — komenda robi z nich podsumowanie w ustandaryzowanym formacie
-i proponuje drafty DEC. Nie musi to być stenogram.
+**2. `/transcript-extract` accepts any file.** Refinement notes, a Miro export, a Confluence
+summary — the command turns them into a summary in the standard format and proposes DEC drafts.
+It does not have to be a verbatim recording.
 
-**3. `Źródło:` może wskazywać na cokolwiek w repo.** Bramka `integrity` sprawdza
-wyłącznie, czy plik istnieje — nie wymusza prefiksu `Transcripts/`. BA paper jest
-legalnym materiałem dowodowym:
+**3. `Source:` may point at anything in the repo.** The `integrity` gate checks only whether the
+file exists — it does not force a `Transcripts/` prefix. A BA paper is legitimate evidence:
 
 ```markdown
-**Źródło:** docs/specs/ba-model-rozliczen.md
+**Source:** docs/specs/ba-billing-model.md
 ```
 
-### Dokument nie jest jednostką wiedzy — decyzja jest
+### The document is not the unit of knowledge — the decision is
 
-BA paper na dwadzieścia stron może nieść trzy decyzje i siedemnaście opisów. Proces
-**nie archiwizuje papera jako „wiedzy"** — wyciąga z niego trzy wpisy DEC i zostawia
-paper jako dowód, na który te wpisy wskazują przez `Źródło:`.
+A twenty-page BA paper may carry three decisions and seventeen descriptions. The process
+**does not archive the paper as "knowledge"** — it pulls three DEC entries out of it and leaves
+the paper as the evidence those entries point at through `Source:`.
 
-Dlatego nie ma i nie powinno być „bramki na kompletność dokumentacji projektowej":
-mierzyłaby objętość, nie wiedzę. Jedyne, co repoBrain sprawdza w dokumentacji poza
-`DECISIONS.md`, to czy zmiana w ścieżce decyzyjnej ma za sobą decyzję.
+That is why there is, and should be, no "gate on project documentation completeness": it would
+measure volume, not knowledge. The only thing repoBrain checks in documentation outside
+`DECISIONS.md` is whether a change on a decision path has a decision behind it.
 
-### Dwie znane luki
+### Two known gaps
 
-Zapisane świadomie, żeby nie budować fałszywego poczucia pokrycia:
+Written down deliberately, so as not to build a false sense of coverage:
 
-**Dryf specyfikacji względem decyzji.** DEC-039 zmienia zachowanie billingu,
-`docs/specs/billing.md` dalej opisuje stare — i **nic tego nie łapie**. Bramki pilnują
-świeżości bloku w `CLAUDE.md`, nie świeżości speców. Spec pozostaje ręczną kopią wiedzy,
-czyli dokładnie tą kategorią, którą kit likwiduje w jednym miejscu i toleruje w drugim.
-Obejście proceduralne: przy wpisie DEC wypełniaj `Konsekwencje:` na tyle konkretnie,
-żeby review PR-a zobaczył, który spec wymaga aktualizacji.
+**Specs drifting away from decisions.** DEC-039 changes billing behaviour, `docs/specs/billing.md`
+still describes the old one — and **nothing catches it**. The gates police the freshness of the
+block in `CLAUDE.md`, not the freshness of the specs. A spec remains a hand-maintained copy of
+knowledge, which is exactly the category this kit eliminates in one place and tolerates in
+another. The procedural workaround: when writing a DEC entry, fill in `Consequences:` concretely
+enough that the PR review can see which spec needs updating.
 
-**Sprzężenie wsteczne działa tylko dla `Transcripts/`.** `/knowledge-audit` sprawdza,
-czy podsumowanie z sekcją „Decyzje" ma na siebie wskazujący wpis DEC. BA paper
-z decyzjami, z którego nikt nie zrobił wpisów, **nie zostanie zgłoszony** — audyt nie
-zagląda poza `Transcripts/`.
+**The feedback loop only covers `Transcripts/`.** `/knowledge-audit` checks whether a summary
+with a "Decisions" section has a DEC entry pointing at it. A BA paper full of decisions that
+nobody turned into entries **will not be reported** — the audit does not look outside
+`Transcripts/`.
 
 ---
 
-## 7. Format wpisu DEC
+## 7. DEC entry format
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
-**Odwraca:** DEC-XXX      (opcjonalne — XXX przestaje obowiązywać w całości)
-**Zmienia:** DEC-XXX      (opcjonalne — XXX obowiązuje dalej, ten wpis doprecyzowuje fragment)
-**Obszar:** tag, tag      (opcjonalne)
-**Scope:** w cenie        (opcjonalne — w cenie | change request | do wyceny)
-**Źródło:** Transcripts/YYYY-MM-DD-slug.md   (opcjonalne; wymagane dla decyzji klienta)
-**Temat:** jedno zdanie
-**Kontekst:** dlaczego temat w ogóle się pojawił
-**Decyzja:** co ustalono
-**Konsekwencje:** co to zmienia w kodzie, kosztach, harmonogramie
-**Podjął:** kto i gdzie
+**Reverses:** DEC-XXX     (optional — XXX stops applying entirely)
+**Changes:** DEC-XXX      (optional — XXX still applies, this entry refines part of it)
+**Area:** tag, tag        (optional)
+**Scope:** in scope       (optional — in scope | change request | needs estimate)
+**Source:** Transcripts/YYYY-MM-DD-slug.md   (optional; required for client decisions)
+**Topic:** one sentence
+**Context:** why the topic came up at all
+**Decision:** what was agreed
+**Consequences:** what this changes in code, cost, schedule
+**Decided by:** who and where
 ```
 
-### Reguły twarde (egzekwowane przez CI)
+### Hard rules (enforced by CI)
 
-- Wymagane pola: `Temat`, `Kontekst`, `Decyzja`, `Konsekwencje`, `Podjął`.
-- Data ściśle `YYYY-MM-DD` z zerami wiodącymi. Separator `-`, `–` lub `—`.
-- `Scope:` przyjmuje wyłącznie: `w cenie`, `change request`, `do wyceny`.
-- Każdy nagłówek `## ` w pliku musi być kompletnym wpisem DEC — **nie ma cichego pomijania**.
-  (Dlatego nagłówki sekcji opisowych w szablonie są poziomu `### `.)
-- `Odwraca:` i `Zmienia:` **wykluczają się wzajemnie** — wpis ma co najwyżej jedną relację.
-- Relacja musi wskazywać na wpis **wcześniejszy** wg pary (data, numer ID).
-- **Nigdy nie dopisuj pola `Status:`** — patrz §8.
+- Required fields: `Topic`, `Context`, `Decision`, `Consequences`, `Decided by`.
+- The date is strictly `YYYY-MM-DD` with leading zeros. Separator `-`, `–` or `—`.
+- `Scope:` accepts only: `in scope`, `change request`, `needs estimate`.
+- Every `## ` heading in the file must be a complete DEC entry — **nothing is skipped silently**.
+  (That is why the descriptive section headings in the template are `### ` level.)
+- `Reverses:` and `Changes:` are **mutually exclusive** — an entry carries at most one relation.
+- The relation must point at an **earlier** entry by the (date, ID number) pair.
+- **Never add a `Status:` field** — see §8.
 
-### Reguły miękkie (konwencja, nie kod)
+### Soft rules (convention, not code)
 
-- Nowe wpisy dopisuj **na końcu pliku** — równoległe PR-y dają wtedy konflikt tekstowy
-  zamiast cichego auto-merge z tym samym numerem DEC.
-- Zmiana merytoryczna = nowy wpis. Edycja korygująca (literówka, data, dopisanie
-  `Źródło:`) jest dozwolona w miejscu.
+- Append new entries **at the end of the file** — parallel PRs then produce a text conflict
+  instead of a silent auto-merge carrying the same DEC number.
+- A substantive change means a new entry. A corrective edit (typo, date, adding `Source:`) is
+  allowed in place.
 
-### Placeholdery blokujące CI
+### Placeholders that block CI
 
 ```
-[data]   [uzupełnij]   [TBD]   [verify]   TODO
+[date]   [fill in]   [TBD]   [verify]   TODO
 ```
 
-Te ciągi blokują **cały plik**. Nie używaj ich jako roboczych znaczników.
-Jeśli czegoś jeszcze nie wiadomo — lepiej nie commitować wpisu wcale niż commitować niepełny.
+These strings block the **whole file**. Do not use them as working markers.
+If something is still unknown — better not to commit the entry at all than to commit an
+incomplete one.
 
-Uwaga: od pierwszego wpisu DEC w dół placeholdery są wykrywane **także wewnątrz bloków
-kodu**. Blok kodu nie może być furtką do niekompletnego wpisu. W preambule (sekcja opisująca
-format, przed pierwszym wpisem) bloki kodu są ignorowane — tam to dokumentacja.
+Note: from the first DEC entry down, placeholders are detected **inside code blocks too**.
+A code block must not be a back door to an incomplete entry. In the preamble (the section
+describing the format, before the first entry) code blocks are ignored — there they are
+documentation.
 
 ---
 
-## 8. Status jest wyliczany, nie zapisywany
+## 8. Status is derived, not written down
 
-Nie ma pola `Status:`. Gdyby było, ktoś musiałby je zaktualizować przy dodaniu nowego
-wpisu — i tego właśnie nikt nigdy nie robi. Zamiast tego **nowy wpis deklaruje relację
-do starego**, a status wynika z grafu.
+There is no `Status:` field. If there were, somebody would have to update it when adding a new
+entry — and that is precisely what nobody ever does. Instead **a new entry declares a relation
+to an old one**, and status follows from the graph.
 
-| Sytuacja | Pole | Efekt w indeksie |
+| Situation | Field | Effect in the index |
 |---|---|---|
-| Poprzednia decyzja przestaje obowiązywać w całości | `Odwraca:` | stary wpis ląduje w sekcji „Odwrócone (historia)" |
-| Poprzednia obowiązuje dalej, doprecyzowujesz fragment | `Zmienia:` | stary wpis zostaje aktywny, z adnotacją *(zmienione przez DEC-XXX)* |
-| Temat niezwiązany z niczym wcześniejszym | żadne | zwykły aktywny wpis |
+| The previous decision stops applying entirely | `Reverses:` | the old entry lands in the "Reversed (history)" section |
+| The previous one still applies, you refine part of it | `Changes:` | the old entry stays active, annotated *(changed by DEC-XXX)* |
+| A topic unrelated to anything earlier | neither | an ordinary active entry |
 
-**Przy wątpliwości zadaj pytanie:** *czy po tej zmianie ktokolwiek nadal działa według
-starego wpisu?* Jeśli tak — `Zmienia:`.
+**When in doubt, ask:** *after this change, is anyone still operating under the old entry?*
+If yes — `Changes:`.
 
-Dodatkowe reguły grafu, których pilnuje `lib/status.mjs`:
+Additional graph rules `lib/status.mjs` enforces:
 
-- wpis odwrócony nie może dalej „zmieniać" celu — jego doprecyzowanie umiera razem z nim,
-- nie można `Zmienia:` wpisu, który został już odwrócony (błąd, blokuje CI),
-- wpis z błędem walidacji (duplikat ID, obie relacje, cel z przyszłości) **nie wnosi
-  krawędzi do grafu** — zostaje widoczny, ale jego relacje są ignorowane, żeby jeden
-  zepsuty wpis nie zafałszował całego indeksu.
+- a reversed entry can no longer "change" its target — its refinement dies together with it,
+- you cannot `Changes:` an entry that has already been reversed (an error, blocks CI),
+- an entry with a validation error (duplicate ID, both relations, a target from the future)
+  **contributes no edge to the graph** — it stays visible, but its relations are ignored, so
+  that one broken entry does not falsify the whole index.
 
-### Co widać w `CLAUDE.md`
+### What you see in `CLAUDE.md`
 
 ```markdown
-<!-- WYGENEROWANE:decyzje — nie edytuj. Uruchom: npx … index -->
-| DEC | Data | Obszar | Temat |
-|-----|------|--------|-------|
-| DEC-012 | 2026-06-02 | api | Webhooki idempotentne po kluczu zdarzenia |
-| DEC-007 | 2026-05-14 | billing | Faktury korygujące poza MVP *(zmienione przez DEC-011)* |
+<!-- GENERATED:decisions — do not edit. Run: node <kit>/bin/knowledge.mjs index -->
+| DEC | Date | Area | Topic |
+|-----|------|------|-------|
+| DEC-012 | 2026-06-02 | api | Webhooks idempotent by event key |
+| DEC-007 | 2026-05-14 | billing | Correcting invoices out of MVP scope *(changed by DEC-011)* |
 
-**Odwrócone (historia):**
+**Reversed (history):**
 
-- DEC-004 (2026-04-21) — odwrócony przez DEC-009
-<!-- /WYGENEROWANE:decyzje -->
+- DEC-004 (2026-04-21) — reversed by DEC-009
+<!-- /GENERATED:decisions -->
 ```
 
-Najnowsze pierwsze. Generator **nigdy nie dopisuje bloku na końcu pliku** — jeśli
-znaczników nie ma, odmawia i każe uruchomić `init`. Blok, który ktoś przesunął albo
-zduplikował, kończy się błędem „napraw ręcznie", nie cichym nadpisaniem.
+Newest first. The generator **never appends the block at the end of the file** — if the markers
+are missing, it refuses and tells you to run `init`. A block somebody moved or duplicated ends
+in a "fix it manually" error, not a silent overwrite.
 
-> Treść znacznika jest **dopasowywana dosłownie**, więc zdanie „Uruchom: npx … index"
-> zostaje w nim mimo zmiany sposobu uruchamiania (§4). Podmiana tego napisu zerwałaby
-> parowanie znaczników w każdej istniejącej instalacji — koszt nieproporcjonalny
-> do kosmetycznego zysku. Aktualne polecenie to `node <kit>/bin/knowledge.mjs index`.
+> The marker text is **matched literally**, so changing it breaks marker pairing in every
+> existing installation. It was changed exactly once, together with the switch of the whole
+> knowledge layer to English (`WYGENEROWANE:decyzje` → `GENERATED:decisions`); the migration
+> path is in §4. Treat it as a constant from here on.
 
 ---
 
-## 9. Bramki CI
+## 9. CI gates
 
-Workflow `.github/workflows/knowledge.yml` odpala się na `pull_request`
-(typy `opened, synchronize, reopened, labeled, unlabeled`) i na `push` do `main`.
+The `.github/workflows/knowledge.yml` workflow fires on `pull_request`
+(types `opened, synchronize, reopened, labeled, unlabeled`) and on `push` to `main`.
 
-> Typy `labeled`/`unlabeled` są **obowiązkowe** — bez nich dodanie etykiety `no-decision`
-> nie retriggeruje builda i PR zostaje czerwony mimo poprawnej reakcji.
+> The `labeled`/`unlabeled` types are **mandatory** — without them, adding the `no-decision`
+> label does not retrigger the build and the PR stays red despite the correct reaction.
 
-| Bramka | Co sprawdza | Kiedy blokuje | Jak naprawić |
+| Gate | What it checks | When it blocks | How to fix it |
 |---|---|---|---|
-| `integrity` | kompletność wpisów, poprawność relacji, placeholdery, istnienie plików z `Źródło:`, `Źródło:` dla decyzji klienta | zawsze | popraw wpis w `DECISIONS.md` |
-| `index-fresh` | czy blok w `CLAUDE.md` = regeneracja z `DECISIONS.md` | zawsze | `knowledge.mjs index` i zacommituj |
-| `decision-required` | czy PR ruszający ścieżki decyzyjne dotyka `DECISIONS.md` | tylko w kontekście PR i tylko gdy podano `--paths` | dopisz wpis DEC albo etykietę `no-decision` |
+| `integrity` | entry completeness, relation validity, placeholders, existence of the files named in `Source:`, `Source:` for client decisions | always | fix the entry in `DECISIONS.md` |
+| `index-fresh` | whether the block in `CLAUDE.md` = a regeneration from `DECISIONS.md` | always | run `knowledge.mjs index` and commit |
+| `decision-required` | whether a PR touching decision paths also touches `DECISIONS.md` | only with PR context and only when `--paths` was given | add a DEC entry or the `no-decision` label |
 
-Bramki pominięte są **wypisywane w logu**, np.:
+Skipped gates are **printed in the log**, e.g.:
 
 ```
-✓ repoBrain — bramki zielone: integrity, index-fresh (pominięte: decision-required (brak --paths — żadna ścieżka nie jest chroniona))
+✓ repoBrain — gates green: integrity, index-fresh (skipped: decision-required (no --paths — no path is protected))
 ```
 
-To celowe: „wszystko zielone" nie może znaczyć „bramka nigdy nie pobiegła". Z tego samego
-powodu CLI odrzuca nieznane flagi (literówka `--pahts` zamiast `--paths` byłaby cicho
-zignorowana) i traktuje niepodmieniony placeholder w `--client-names` jak brak flagi,
-komunikując to wprost.
+That is deliberate: "everything green" must not be allowed to mean "the gate never ran". For the
+same reason the CLI rejects unknown flags (the typo `--pahts` instead of `--paths` would be
+silently ignored) and treats an unreplaced placeholder in `--client-names` as a missing flag,
+saying so outright.
 
-### Uzupełnienie bramek: `/knowledge-audit`
+### Complementing the gates: `/knowledge-audit`
 
-Bramki łapią pojedyncze zdarzenia. Audyt łapie **dryf systemowy** — rzeczy, których
-blokowanie dawałoby fałszywe alarmy:
+The gates catch single events. The audit catches **systemic drift** — the things that would
+produce false alarms if you blocked on them:
 
-1. **Zgubione decyzje** — transkrypt z sekcją „Decyzje", na który żaden DEC nie wskazuje
-   przez `Źródło:`. Ostrzeżenie, nie błąd: nie każda decyzja z callu zasługuje na wpis.
-2. **Użycia furtki** — liczba PR-ów z etykietą `no-decision` z ostatnich 30 dni. Rosnąca
-   oznacza, że ścieżki decyzyjne są za szerokie albo bramka jest obchodzona. To jedyna
-   obrona przed cichym znormalizowaniem furtki.
-3. **Dokumenty bez odsyłaczy** — pliki w `docs/`, do których nic w repo nie linkuje.
-4. **Martwe linki wewnętrzne** — świadomie poza CI, bo ścieżki względne dawałyby fałszywe alarmy.
+1. **Lost decisions** — a transcript with a "Decisions" section that no DEC points at through
+   `Source:`. A warning, not an error: not every decision from a call deserves an entry.
+2. **Back door usage** — the number of PRs labelled `no-decision` in the last 30 days. A rising
+   number means the decision paths are too broad or the gate is being worked around. This is the
+   only defence against the back door being quietly normalised.
+3. **Unreferenced documents** — files in `docs/` that nothing in the repo links to.
+4. **Dead internal links** — deliberately outside CI, because relative paths would produce false alarms.
 
-Pole `Źródło:` domyka pętlę w obie strony: **w przód** `integrity` blokuje wpis wskazujący
-na nieistniejący transkrypt; **wstecz** audyt ostrzega, że coś z rozmowy wypadło.
+The `Source:` field closes the loop in both directions: **forwards**, `integrity` blocks an entry
+pointing at a non-existent transcript; **backwards**, the audit warns that something from a
+conversation fell through.
 
 ---
 
-## 10. Komendy CLI
+## 10. CLI commands
 
 ```bash
-node <ścieżka-do-kitu>/bin/knowledge.mjs <init|index|check> [flagi]
+node <path-to-kit>/bin/knowledge.mjs <init|index|check> [flags]
 ```
 
-Zero zależności, więc żadnego `npm install` ani `npx` — wystarczy `node ≥ 20`
-i katalog z kitem sklonowany po ustalonym SHA. CLI zawsze operuje na **bieżącym
-katalogu roboczym**, nie na katalogu kitu.
+Zero dependencies, so no `npm install` and no `npx` — all you need is `node ≥ 20` and a
+directory holding the kit cloned at the agreed SHA. The CLI always operates on the **current
+working directory**, not on the kit directory.
 
-| Komenda | Flagi | Działanie |
+| Command | Flags | What it does |
 |---|---|---|
-| `init` | — | tworzy `docs/DECISIONS.md`, workflow, dopisuje sekcję do `CLAUDE.md`. Nigdy nie nadpisuje. |
-| `index` | — | regeneruje blok w `CLAUDE.md`. Idempotentne — bez zmian wypisuje „już aktualny". |
-| `check` | `--paths`, `--client-names` | uruchamia bramki. Wypisuje wszystkie błędy naraz, nie pierwszy. |
+| `init` | — | creates `docs/DECISIONS.md`, the workflow, appends the section to `CLAUDE.md`. Never overwrites. |
+| `index` | — | regenerates the block in `CLAUDE.md`. Idempotent — with no changes it prints "already up to date". |
+| `check` | `--paths`, `--client-names` | runs the gates. Prints every error at once, not just the first. |
 
-Kody wyjścia: `0` sukces, `1` błąd walidacji lub bramki, `2` nieznana komenda.
+Exit codes: `0` success, `1` a validation or gate error, `2` an unknown command.
 
-Komendy Claude Code (plugin): `/knowledge-init`, `/transcript-extract <plik>`.
-Skille ładowane automatycznie: `decisions-format`, `knowledge-audit`.
+Claude Code commands (the plugin): `/knowledge-init`, `/transcript-extract <file>`.
+Skills loaded automatically: `decisions-format`, `knowledge-audit`.
 
 ---
 
-## 11. Rytm pracy i właściciel
+## 11. Working rhythm and ownership
 
-`DECISIONS.md` **ma przypisanego właściciela** — domyślnie PM projektu. Audyt poprzedniego
-projektu sformułował prawo „każdy magazyn wymaga właściciela i tempa aktualizacji";
-spec bez tego przydziału powtarzałby błąd, który opisuje.
+`DECISIONS.md` **has an assigned owner** — by default the project's PM. The audit of the previous
+project produced the law "every store needs an owner and an update cadence"; a spec without that
+assignment would repeat the very mistake it describes.
 
-| Kiedy | Kto | Co |
+| When | Who | What |
 |---|---|---|
-| po każdym callu z klientem | właściciel | `/transcript-extract`, akceptacja draftów |
-| przy każdym PR w ścieżkach decyzyjnych | autor PR-a | wpis DEC albo świadoma etykieta |
-| po każdej edycji `DECISIONS.md` | autor | `knowledge.mjs index`, commit obu plików |
-| raz na sprint | właściciel | `/knowledge-audit`, przegląd użyć furtki |
-| gdy furtka rośnie | właściciel | zawężenie albo rozszerzenie ścieżek decyzyjnych |
+| after every client call | the owner | `/transcript-extract`, approving the drafts |
+| on every PR on a decision path | the PR author | a DEC entry or a deliberate label |
+| after every edit of `DECISIONS.md` | the author | `knowledge.mjs index`, commit both files |
+| once a sprint | the owner | `/knowledge-audit`, review of back door usage |
+| when the back door grows | the owner | narrowing or widening the decision paths |
 
-**Zielone CI nie znaczy zdrowy second brain.** Bramki pilnują świeżości derywaty przy
-zmianach *kodu*. Decyzja z calla, która nie dotyka żadnej ścieżki decyzyjnej („klient
-potwierdził, że pakiet premium zawiera X"), nie ma żadnej bramki — jej jedyną drogą
-do repo jest człowiek. Dlatego rola jest przypisana, a nie dorozumiana.
-
----
-
-## 12. Czego repoBrain nie robi
-
-Świadome granice, żeby nie budować oczekiwań, których kit nie spełnia:
-
-- **Nie pilnuje, czy źródło opisuje rzeczywistość.** Gwarancja dotyczy dryfu *kopii*,
-  nie dryfu *wiedzy*. `Odwraca:` deklaruje ten sam człowiek, który wcześniej zapominał
-  zaktualizować `Status:`. Zysk jest realny, ale mniejszy niż brzmi: nowy wpis to lepszy
-  moment na przypomnienie niż powrót do starego, a jedno miejsce zapisu bije dwa.
-- **Nie zapisuje niczego automatycznie do `DECISIONS.md`.** Bez auto-commitu w CI,
-  bez hooka pre-commit. Automat piszący do repo bez człowieka jest przyczyną defektu,
-  który naprawiamy.
-- **Nie generuje listy plików w `docs/`.** Problem sierot to brak kuracji, nie brak listy;
-  automatyczna lista to `ls -R` w markdownie. Zamiast tego `/knowledge-audit` raportuje
-  dokumenty, do których nic nie linkuje.
-- **Nie parsuje surowych PDF-ów w CI.** To zadanie dla agenta z człowiekiem w pętli.
-- **Nie migruje istniejących repo.** Instalator nie nadpisuje, więc retrofit jest możliwy
-  później, ale konwersja formatu starych wpisów nie jest zbudowana ani przetestowana.
-- **Nie działa offline.** Workflow ściąga kod kitu z GitHuba przez `actions/checkout`. Ryzyko rezydualne
-  zapisane świadomie: przy awarii GitHuba merge'e stają, a `continue-on-error: true`
-  dodane pod presją deadline'u ma tendencję do pozostawania na zawsze.
+**Green CI does not mean a healthy second brain.** The gates police the freshness of the
+derivative when *code* changes. A decision from a call that touches no decision path ("the client
+confirmed the premium package includes X") has no gate at all — its only route into the repo is a
+human. That is why the role is assigned rather than assumed.
 
 ---
 
-## 13. Rozwój kitu
+## 12. What repoBrain does not do
+
+Deliberate boundaries, so as not to build expectations the kit does not meet:
+
+- **It does not police whether the source describes reality.** The guarantee covers the drift of
+  a *copy*, not the drift of *knowledge*. `Reverses:` is declared by the same human who used to
+  forget to update `Status:`. The gain is real but smaller than it sounds: a new entry is a better
+  moment for the reminder than going back to an old one, and one place to write beats two.
+- **It writes nothing to `DECISIONS.md` automatically.** No auto-commit in CI, no pre-commit
+  hook. Automation writing to the repo without a human is the cause of the defect we are fixing.
+- **It does not generate a file listing for `docs/`.** The orphan problem is a lack of curation,
+  not a lack of a list; an automatic list is `ls -R` in markdown. Instead, `/knowledge-audit`
+  reports documents nothing links to.
+- **It does not parse raw PDFs in CI.** That is a job for an agent with a human in the loop.
+- **It does not migrate existing repos.** The installer does not overwrite, so a retrofit is
+  possible later, but converting the format of old entries is neither built nor tested.
+- **It does not work offline.** The workflow fetches the kit's code from GitHub via
+  `actions/checkout`. The residual risk is recorded deliberately: during a GitHub outage merges
+  stall, and a `continue-on-error: true` added under deadline pressure has a way of staying forever.
+
+---
+
+## 13. Developing the kit
 
 ```
-bin/knowledge.mjs     CLI — jedyne miejsce znające filesystem, argv i zmienne CI
-lib/parse.mjs         Markdown → obiekty DEC
-lib/status.mjs        derywacja statusu z grafu relacji
-lib/render.mjs        render bloku + wstrzyknięcie między znaczniki
-lib/integrity.mjs     placeholdery, istnienie źródeł, decyzje klienta
-lib/gates.mjs         trzy bramki CI
-lib/fences.mjs        maska bloków kodu
-lib/init.mjs          plan instalacji (czysta funkcja)
-templates/            szablony kopiowane przez `init`
-.claude-plugin/       komendy i skille pluginu Claude Code
+bin/knowledge.mjs     the CLI — the only place that knows the filesystem, argv and CI env vars
+lib/parse.mjs         Markdown → DEC objects
+lib/status.mjs        deriving status from the relation graph
+lib/render.mjs        rendering the block + splicing it between the markers
+lib/integrity.mjs     placeholders, existence of sources, client decisions
+lib/gates.mjs         the three CI gates
+lib/fences.mjs        the code block mask
+lib/init.mjs          the installation plan (a pure function)
+templates/            the templates `init` copies
+.claude-plugin/       the Claude Code plugin's commands and skills
 ```
 
-### Dlaczego kit nie przechodzi przez npm
+### Why the kit does not go through npm
 
-Pierwotna instrukcja instalacji używała `npx --yes github:monterail/repobrain#<SHA>`.
-W GitHub Actions ta droga **wywala się zawsze**:
+The original installation instructions used `npx --yes github:monterail/repobrain#<SHA>`.
+In GitHub Actions that route **always blows up**:
 
 ```
 npm error GitFetcher requires an Arborist constructor to pack a tarball
 ```
 
-To defekt npm 10.x — czyli dokładnie tej wersji, którą `actions/setup-node` instaluje
-razem z node 20 i 22. Nie zależy od wersji node'a, więc podniesienie node'a nie pomaga.
-Na maszynach z npm ≥ 11 to samo polecenie działa i **dlatego błąd przeszedł
-przez weryfikację przy projektowaniu**: wykonalność sprawdzono lokalnie, choć jedynym
-środowiskiem, w którym to polecenie miało realnie biec, było CI.
+It is a defect in npm 10.x — exactly the version `actions/setup-node` installs alongside node 20
+and 22. It does not depend on the node version, so bumping node does not help. On machines with
+npm ≥ 11 the same command works, and **that is why the bug got through design verification**:
+feasibility was checked locally, even though the only environment where that command was ever
+going to run was CI.
 
-Poprawka usuwa przyczynę zamiast obchodzić objaw: kit **nie ma żadnych zależności**,
-więc npm nie miał tu nic do zrobienia — był czystym pośrednikiem między `git clone`
-a `node`. Workflow ściąga go teraz przez `actions/checkout` z tym samym pinem po SHA
-i uruchamia bezpośrednio. Pin i jego gwarancje zostają bez zmian, znika jedno ogniwo
-i kilkanaście sekund joba.
+The fix removes the cause instead of working around the symptom: the kit **has no dependencies**,
+so npm had nothing to do here — it was a pure middleman between `git clone` and `node`. The
+workflow now fetches it via `actions/checkout` with the same SHA pin and runs it directly. The
+pin and its guarantees are unchanged, one link and a dozen seconds of the job disappear.
 
-**Lekcja ogólniejsza:** weryfikacja wykonana w innym środowisku niż docelowe nie jest
-weryfikacją. Zgłoszone przez użytkownika, 2026-07-29.
+**The more general lesson:** verification performed in an environment other than the target one
+is not verification. Reported by a user, 2026-07-29.
 
-**Niezmiennik architektoniczny:** `lib/` nie może zależeć ani od API Claude Code,
-ani od API GitHub Actions. Naruszenie wyłączyłoby kit w CI — czyli w jedynym miejscu,
-gdzie egzekwowanie realnie następuje. Dlatego wszystko w `lib/` to czyste funkcje:
-tekst na wejściu, obiekty i tablica błędów na wyjściu.
+**The architectural invariant:** `lib/` may depend on neither the Claude Code API nor the GitHub
+Actions API. A violation would disable the kit in CI — that is, in the only place where
+enforcement actually happens. That is why everything in `lib/` is a pure function: text in,
+objects and an error array out.
 
 ```bash
-npm test        # node:test, zero zależności, bez mocków i plików tymczasowych
+npm test        # node:test, zero dependencies, no mocks and no temporary files
 ```
 
-Projekt: [`docs/design/2026-07-28-repobrain-design.md`](docs/design/2026-07-28-repobrain-design.md) ·
-plan implementacji: [`docs/plans/2026-07-28-repobrain-implementation.md`](docs/plans/2026-07-28-repobrain-implementation.md)
+Design: [`docs/design/2026-07-28-repobrain-design.md`](docs/design/2026-07-28-repobrain-design.md) ·
+implementation plan: [`docs/plans/2026-07-28-repobrain-implementation.md`](docs/plans/2026-07-28-repobrain-implementation.md)

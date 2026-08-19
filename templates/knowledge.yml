@@ -2,8 +2,8 @@ name: knowledge
 
 on:
   pull_request:
-    # labeled/unlabeled sa OBOWIAZKOWE: bez nich dodanie etykiety
-    # `no-decision` nie retriggeruje builda i PR zostaje czerwony.
+    # labeled/unlabeled are MANDATORY: without them, adding the `no-decision`
+    # label does not retrigger the build and the PR stays red.
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
@@ -12,32 +12,32 @@ jobs:
   knowledge:
     runs-on: ubuntu-latest
     steps:
-      # Checkout projektu MUSI byc pierwszy. actions/checkout domyslnie czysci
-      # katalog docelowy (`git clean -ffdx`), wiec odwrotna kolejnosc skasowalaby
-      # sciagniety wczesniej kit.
+      # The project checkout MUST come first. actions/checkout cleans the target
+      # directory by default (`git clean -ffdx`), so the reverse order would wipe
+      # out the kit fetched earlier.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Kit sciagany przez checkout, NIE przez `npx github:…`. npm 10.x — czyli
-      # to, co setup-node instaluje razem z node 20 i 22 — wywala sie na tym
-      # specyfikatorze bledem `GitFetcher requires an Arborist constructor`.
-      # Kit nie ma zadnych zaleznosci, wiec npm byl tu wylacznie posrednikiem:
-      # usuniecie go naprawia blad i skraca joba.
+      # The kit is fetched via checkout, NOT via `npx github:…`. npm 10.x — that
+      # is, what setup-node installs alongside node 20 and 22 — blows up on that
+      # specifier with `GitFetcher requires an Arborist constructor`. The kit has
+      # no dependencies, so npm was purely a middleman here: removing it fixes
+      # the error and shortens the job.
       - uses: actions/checkout@v4
         with:
           repository: monterail/repobrain
-          # Pin po pelnym SHA, nigdy po tagu — tagi gita sa mutowalne,
-          # a to jest zdalny kod wykonywany w CI tego projektu.
-          ref: <PELNY_SHA>
+          # Pin by full SHA, never by tag — git tags are mutable, and this is
+          # remote code executed in this project's CI.
+          ref: <FULL_SHA>
           path: .repobrain
 
-      # Oficjalne akcje GitHuba pinujemy po tagu SWIADOMIE — inny model zaufania
-      # niz kod z cudzego repo, ktory powyzej pinujemy po pelnym SHA.
+      # We pin GitHub's official actions by tag DELIBERATELY — a different trust
+      # model than code from someone else's repo, which we pin by full SHA above.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - run: node .repobrain/bin/knowledge.mjs check
              --paths 'docs/specs/**,**/pricing*'
-             --client-names '<nazwiska klienta po przecinku, np. Kowalski, Nowak>'
+             --client-names '<comma-separated client names, e.g. Smith, Jones>'

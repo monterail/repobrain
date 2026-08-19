@@ -1,7 +1,7 @@
 {
   "name": "repobrain",
   "version": "0.1.0",
-  "description": "Warstwa wiedzy w repo, egzekwowana przez CI",
+  "description": "A knowledge layer inside the repo, enforced by CI",
   "type": "module",
   "bin": { "repobrain": "bin/knowledge.mjs" },
   "scripts": { "test": "node --test" },

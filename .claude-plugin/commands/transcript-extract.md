@@ -1,72 +1,72 @@
 ---
-description: Wyciągnij z transkryptu decyzje, niepewności i zadania; rozwieź je do właściwych miejsc
-argument-hint: <ścieżka do transkryptu>
+description: Extract decisions, uncertainties and tasks from a transcript; route them to the right places
+argument-hint: <path to transcript>
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Przetwórz transkrypt: **$ARGUMENTS**
+Process the transcript: **$ARGUMENTS**
 
-## Krok 1 — przeczytaj i podsumuj
+## Step 1 — read and summarise
 
-Zapisz podsumowanie do `Transcripts/YYYY-MM-DD-slug.md` (datę weź z nazwy pliku
-lub treści). Katalog utwórz, jeśli nie istnieje. Szablon:
+Write the summary to `Transcripts/YYYY-MM-DD-slug.md` (take the date from the file
+name or the content). Create the directory if it does not exist. Template:
 
 ```markdown
-# Podsumowanie — [data] — [temat]
+# Summary — [date] — [topic]
 
-**Typ:** klient / wewnętrzne / discovery / vendor
-**Uczestnicy:** …
-**Język:** PL / EN
+**Type:** client / internal / discovery / vendor
+**Participants:** …
+**Language:** PL / EN
 
-## Kontekst
-[1-2 zdania: po co było to spotkanie]
+## Context
+[1-2 sentences: why this meeting happened]
 
-## Decyzje
-| # | Decyzja | Kto | Uwagi |
-|---|---------|-----|-------|
+## Decisions
+| # | Decision | Who | Notes |
+|---|----------|-----|-------|
 
-## Zadania
-| Zadanie | Kto | Termin | Priorytet |
-|---------|-----|--------|-----------|
+## Tasks
+| Task | Who | Due | Priority |
+|------|-----|-----|----------|
 
-## Otwarte pytania
+## Open questions
 - …
 
-## Cytaty
-> "[dokładny cytat]" — [kto]
+## Quotes
+> "[exact quote]" — [who]
 ```
 
-Nie zmyślaj. Cokolwiek niejasne oznacz `[verify]` i zgłoś użytkownikowi —
-bramka `integrity` odrzuci `[verify]`, który zostanie w `DECISIONS.md`.
+Do not invent anything. Mark whatever is unclear with `[verify]` and report it to the
+user — the `integrity` gate rejects a `[verify]` left in `DECISIONS.md`.
 
-## Krok 2 — sklasyfikuj według trwałości
+## Step 2 — classify by lifespan
 
-Kryterium routingu to **cykl życia pozycji**, nie jej typ. Decyzja obowiązuje,
-aż ktoś ją odwróci; zadanie umiera po wykonaniu.
+The routing criterion is an item's **lifecycle**, not its type. A decision holds
+until someone reverses it; a task dies once it is done.
 
-| Typ | Cel |
+| Type | Destination |
 |---|---|
-| Decyzja | draft wpisu DEC → `docs/DECISIONS.md` |
-| Niepewność, założenie | `HYPOTHESES.md` |
-| Zadanie | lista do wklejenia w Jirę — **nie do repo** |
-| Cytat | zostaje w podsumowaniu jako dowód |
+| Decision | draft DEC entry → `docs/DECISIONS.md` |
+| Uncertainty, assumption | `HYPOTHESES.md` |
+| Task | a list to paste into Jira — **not into the repo** |
+| Quote | stays in the summary as evidence |
 
-Zadania nie trafiają do repo: jako listy TODO w `docs/` nikt ich nie zamyka.
+Tasks do not go into the repo: as TODO lists in `docs/` nobody ever closes them.
 
-## Krok 3 — przygotuj drafty wpisów DEC
+## Step 3 — prepare DEC entry drafts
 
-Format wg skilla `decisions-format`. W każdym drafcie ustaw `Źródło:` na plik
-podsumowania z kroku 1. Gdy decyzję podjął klient, `Źródło:` jest wymagane.
-Ustaw `Scope:`, jeśli z rozmowy wynika, czy rzecz jest w cenie.
+Follow the format from the `decisions-format` skill. In every draft set `Source:` to the
+summary file from step 1. When the client made the decision, `Source:` is required.
+Set `Scope:` if the conversation makes clear whether the thing is in scope.
 
-Jeśli decyzja modyfikuje wcześniejszą — dobierz `Odwraca:` albo `Zmienia:` wg pytania:
-*czy ktokolwiek nadal działa według starego wpisu?*
+If a decision modifies an earlier one, pick `Reverses:` or `Changes:` by asking:
+*is anyone still operating under the old entry?*
 
-**Pokaż drafty w odpowiedzi — nie zapisuj ich na dysk.** Zapis następuje dopiero po akceptacji użytkownika w Kroku 4.
+**Show the drafts in your reply — do not write them to disk.** They are saved only after the user approves in Step 4.
 
-## Krok 4 — pokaż i poczekaj
+## Step 4 — show and wait
 
-**Nie zapisuj niczego poza podsumowaniem z kroku 1 bez zgody użytkownika.**
-Pokaż drafty, zapytaj, które zastosować. Po akceptacji dopisz je na końcu
-`docs/DECISIONS.md`, uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index`
-i pokaż, co się zmieniło.
+**Do not save anything beyond the step 1 summary without the user's consent.**
+Show the drafts, ask which to apply. Once approved, append them to the end of
+`docs/DECISIONS.md`, run `node <PATH_TO_KIT>/bin/knowledge.mjs index`
+and show what changed.

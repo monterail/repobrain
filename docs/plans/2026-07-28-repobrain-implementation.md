@@ -2,67 +2,67 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Zbudować repoBrain — CLI + plugin Claude Code, który utrzymuje `docs/DECISIONS.md` jako jedyne źródło prawdy i generuje z niego blok aktywnych decyzji do `CLAUDE.md`, egzekwując spójność trzema bramkami CI.
+**Goal:** Build repoBrain — a CLI plus a Claude Code plugin that keeps `docs/DECISIONS.md` as the single source of truth and generates from it a block of active decisions into `CLAUDE.md`, enforcing consistency with three CI gates.
 
-**Architecture:** Czysty rdzeń w `lib/` (parser → graf relacji → render), bez zależności od API Claude Code i API GitHub Actions. Dwie ścieżki konsumpcji tego samego kodu: `bin/knowledge.mjs` uruchamiany przez `npx` w CI oraz plugin z komendami dla zespołu. Walidacja zwraca listy błędów zamiast rzucać wyjątkami — CI ma pokazać wszystkie problemy naraz, nie pierwszy.
+**Architecture:** A pure core in `lib/` (parser → relation graph → render), with no dependency on the Claude Code API or the GitHub Actions API. Two consumption paths for the same code: `bin/knowledge.mjs` run through `npx` in CI, and a plugin with commands for the team. Validation returns lists of errors instead of throwing — CI should show every problem at once, not the first one.
 
-**Tech Stack:** Node ≥20, ESM, **zero zależności produkcyjnych i deweloperskich**. Testy: wbudowany `node:test`. Bez transpilacji, bez bundlera, bez lintera.
+**Tech Stack:** Node ≥20, ESM, **zero production and development dependencies**. Tests: the built-in `node:test`. No transpilation, no bundler, no linter.
 
 ## Global Constraints
 
-- **Zero dependencies.** `package.json` nie ma `dependencies` ani `devDependencies`. Wyłącznie moduły wbudowane (`node:fs`, `node:path`, `node:test`, `node:assert`, `node:child_process`, `node:os`).
-- **Niezmiennik architektoniczny:** `lib/` nie może importować niczego związanego z Claude Code ani GitHub Actions. Kontekst środowiska (ścieżki, zmienne, `GITHUB_EVENT_PATH`) czyta wyłącznie `bin/knowledge.mjs` i przekazuje do `lib/` jako argumenty.
-- **Wszystkie pliki `.mjs`**, `"type": "module"` w `package.json`.
-- **Separator daty w nagłówku DEC:** akceptowane `-`, `–`, `—`.
-- **Format daty:** ściśle `YYYY-MM-DD` z zerami wiodącymi. `2026-9-3` to błąd.
-- **Pola wymagane wpisu DEC:** `Temat`, `Kontekst`, `Decyzja`, `Konsekwencje`, `Podjął`.
-- **Pola opcjonalne:** `Odwraca`, `Zmienia`, `Obszar`, `Scope`, `Źródło`.
-- **Dozwolone wartości `Scope:`** — dokładnie: `w cenie`, `change request`, `do wyceny`.
-- **Zamknięta lista placeholderów:** `[data]`, `[uzupełnij]`, `[TBD]`, `[verify]`, `TODO`. Nigdy wzorzec „dowolny `[...]`".
-- **Znaczniki bloku generowanego:** otwierający `<!-- WYGENEROWANE:decyzje — nie edytuj. Uruchom: npx … index -->`, zamykający `<!-- /WYGENEROWANE:decyzje -->`.
-- **Generator nigdy nie dopisuje na końcu pliku.** Brak znaczników = błąd z instrukcją uruchomienia `init`.
-- **Instalator nigdy nie nadpisuje istniejących plików.**
-- **Komunikaty błędów po polsku**, z numerem linii, w formacie `<linia>: <opis>`.
-- **Parser pomija linie wewnątrz bloków ogrodzonych** (```` ``` ````). `DECISIONS.md` dokumentuje własny format przykładami, więc `## DEC-NNN — YYYY-MM-DD` w bloku kodu nie może być traktowane jak nagłówek. Bez tego szablon z Task 8 wywala bramkę `integrity` zaraz po instalacji.
-- Wszystkie funkcje walidujące zwracają `{ errors: string[], ... }`. Wyjątki wyłącznie dla błędów programisty (brak znaczników w `CLAUDE.md`).
+- **Zero dependencies.** `package.json` has neither `dependencies` nor `devDependencies`. Built-in modules only (`node:fs`, `node:path`, `node:test`, `node:assert`, `node:child_process`, `node:os`).
+- **The architectural invariant:** `lib/` may not import anything tied to Claude Code or GitHub Actions. Environment context (paths, variables, `GITHUB_EVENT_PATH`) is read exclusively by `bin/knowledge.mjs` and passed into `lib/` as arguments.
+- **All files are `.mjs`**, `"type": "module"` in `package.json`.
+- **Date separator in the DEC heading:** `-`, `–`, `—` are accepted.
+- **Date format:** strictly `YYYY-MM-DD` with leading zeros. `2026-9-3` is an error.
+- **Required DEC entry fields:** `Topic`, `Context`, `Decision`, `Consequences`, `Decided by`.
+- **Optional fields:** `Reverses`, `Changes`, `Area`, `Scope`, `Source`.
+- **Allowed `Scope:` values** — exactly: `in scope`, `change request`, `needs estimate`.
+- **A closed list of placeholders:** `[date]`, `[fill in]`, `[TBD]`, `[verify]`, `TODO`. Never an "any `[...]`" pattern.
+- **Markers of the generated block:** opening `<!-- GENERATED:decisions — do not edit. Run: node <kit>/bin/knowledge.mjs index -->`, closing `<!-- /GENERATED:decisions -->`.
+- **The generator never appends at the end of the file.** Missing markers = an error telling you to run `init`.
+- **The installer never overwrites existing files.**
+- **Error messages in English**, with a line number, in the format `<line>: <description>`.
+- **The parser skips lines inside fenced blocks** (```` ``` ````). `DECISIONS.md` documents its own format with examples, so `## DEC-NNN — YYYY-MM-DD` inside a code block must not be treated as a heading. Without this the template from Task 8 breaks the `integrity` gate right after installation.
+- Every validating function returns `{ errors: string[], ... }`. Exceptions are reserved for programmer errors (missing markers in `CLAUDE.md`).
 
 ## File Structure
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `package.json` | `bin`, `type: module`, skrypt testowy. Zero zależności |
-| `lib/parse.mjs` | tekst `DECISIONS.md` → obiekty DEC + błędy składniowe per wpis |
-| `lib/status.mjs` | obiekty DEC → zbiór aktywnych i historia + błędy relacji między wpisami |
-| `lib/render.mjs` | zbiór aktywnych → markdown; wstawienie bloku między znaczniki |
-| `lib/integrity.mjs` | reguły wymagające systemu plików i polityki (`Źródło:`, placeholdery, `Scope:`) |
-| `lib/gates.mjs` | trzy bramki CI złożone z powyższych |
-| `lib/init.mjs` | scaffolding bez nadpisywania |
-| `bin/knowledge.mjs` | jedyne miejsce znające środowisko: argv, cwd, zmienne CI |
-| `templates/*` | szkielety wstawiane przez `init` |
-| `lib/*.test.mjs` | testy jednostkowe obok modułów |
-| `test/e2e.test.mjs` | pełna pętla w katalogu tymczasowym |
-| `.claude-plugin/**` | plugin: manifest, skille, komendy |
+| `package.json` | `bin`, `type: module`, the test script. Zero dependencies |
+| `lib/parse.mjs` | `DECISIONS.md` text → DEC objects + syntax errors per entry |
+| `lib/status.mjs` | DEC objects → the active set and history + relation errors between entries |
+| `lib/render.mjs` | the active set → markdown; splicing the block between the markers |
+| `lib/integrity.mjs` | rules that need the filesystem and policy (`Source:`, placeholders, `Scope:`) |
+| `lib/gates.mjs` | the three CI gates composed from the above |
+| `lib/init.mjs` | scaffolding without overwriting |
+| `bin/knowledge.mjs` | the only place that knows the environment: argv, cwd, CI variables |
+| `templates/*` | the skeletons `init` inserts |
+| `lib/*.test.mjs` | unit tests next to the modules |
+| `test/e2e.test.mjs` | the full loop in a temporary directory |
+| `.claude-plugin/**` | the plugin: manifest, skills, commands |
 
 ### Kontrakt danych
 
-Obiekt DEC produkowany przez `parseDecisions`:
+The DEC object produced by `parseDecisions`:
 
 ```js
 {
   id: 'DEC-039',        // znormalizowane do 3 cyfr
-  num: 39,              // liczba, do porządkowania
+  num: 39,              // a number, for ordering
   date: '2026-07-20',
-  reverses: 'DEC-036' | null,   // Odwraca
-  changes: 'DEC-036' | null,    // Zmienia
-  area: ['billing', 'webhooki'],  // Obszar; [] gdy brak
-  scope: 'w cenie' | null,
-  source: 'Transcripts/x.md' | null,  // Źródło
-  topic: 'tekst',       // Temat
-  context: 'tekst',     // Kontekst
-  decision: 'tekst',    // Decyzja
-  consequences: 'tekst',// Konsekwencje
-  decidedBy: 'tekst',   // Podjął
-  line: 12              // linia nagłówka, 1-indeksowana
+  reverses: 'DEC-036' | null,   // Reverses
+  changes: 'DEC-036' | null,    // Changes
+  area: ['billing', 'webhooks'],  // Area; [] when absent
+  scope: 'in scope' | null,
+  source: 'Transcripts/x.md' | null,  // Source
+  topic: 'tekst',       // Topic
+  context: 'tekst',     // Context
+  decision: 'tekst',    // Decision
+  consequences: 'tekst',// Consequences
+  decidedBy: 'text',    // Decided by
+  line: 12              // the heading's line, 1-indexed
 }
 ```
 
@@ -70,19 +70,19 @@ Wynik `deriveStatus`:
 
 ```js
 {
-  active:  [{ dec, changedBy: ['DEC-039'] }],   // changedBy: [] gdy nikt nie zmienia
+  active:  [{ dec, changedBy: ['DEC-039'] }],   // changedBy: [] when nobody changes it
   history: [{ dec, reversedBy: 'DEC-033' }],
   errors:  string[]
 }
 ```
 
-### Uzupełnienie specu
+### Filling a gap in the spec
 
-Spec (§3) wymaga `Źródło:`, „gdy `Podjął:` wskazuje klienta", ale nie definiuje, skąd narzędzie wie, kto jest klientem. Rozstrzygnięcie: opcjonalny argument `--client-names <lista>`. Bez niego reguła nie działa — projekt włącza ją świadomie. Zero konfiguracji domyślnej.
+The spec (§3) requires `Source:` "when `Decided by:` names the client", but does not define how the tool knows who the client is. The resolution: an optional `--client-names <list>` argument. Without it the rule does not apply — a project enables it deliberately. Zero default configuration.
 
 ---
 
-### Task 1: Szkielet pakietu i parser wpisu DEC
+### Task 1: Package skeleton and the DEC entry parser
 
 **Files:**
 - Create: `package.json`
@@ -93,13 +93,13 @@ Spec (§3) wymaga `Źródło:`, „gdy `Podjął:` wskazuje klienta", ale nie de
 - Consumes: nic
 - Produces: `parseDecisions(text: string) → { decs: Dec[], errors: string[] }`
 
-- [ ] **Step 1: Utwórz `package.json`**
+- [ ] **Step 1: Create `package.json`**
 
 ```json
 {
   "name": "repobrain",
   "version": "0.1.0",
-  "description": "Warstwa wiedzy w repo, egzekwowana przez CI",
+  "description": "A knowledge layer inside the repo, enforced by CI",
   "type": "module",
   "bin": { "repobrain": "bin/knowledge.mjs" },
   "scripts": { "test": "node --test" },
@@ -108,7 +108,7 @@ Spec (§3) wymaga `Źródło:`, „gdy `Podjął:` wskazuje klienta", ale nie de
 }
 ```
 
-- [ ] **Step 2: Napisz test, który nie przechodzi**
+- [ ] **Step 2: Write a failing test**
 
 ```js
 // lib/parse.test.mjs
@@ -116,21 +116,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDecisions } from './parse.mjs';
 
-const VALID = `# Decyzje
+const VALID = `# Decisions
 
 ## DEC-039 — 2026-07-20
-**Zmienia:** DEC-036
-**Obszar:** billing, webhooki
-**Scope:** w cenie
-**Źródło:** Transcripts/2026-07-20-call.md
-**Temat:** Faktura korygująca poza limitem
-**Kontekst:** Klient doprecyzował zachowanie.
-**Decyzja:** Nie wlicza się do limitu.
-**Konsekwencje:** Zmiana w liczeniu limitu.
-**Podjął:** Kowalska — call 2026-07-20
+**Changes:** DEC-036
+**Area:** billing, webhooki
+**Scope:** in scope
+**Source:** Transcripts/2026-07-20-call.md
+**Topic:** Correcting invoice outside the limit
+**Context:** The client clarified the behaviour.
+**Decision:** It does not count towards the limit.
+**Consequences:** A change in how the limit is computed.
+**Decided by:** Smith — call 2026-07-20
 `;
 
-test('parsuje kompletny wpis ze wszystkimi polami', () => {
+test('parses a complete entry with every field', () => {
   const { decs, errors } = parseDecisions(VALID);
   assert.deepEqual(errors, []);
   assert.equal(decs.length, 1);
@@ -140,15 +140,15 @@ test('parsuje kompletny wpis ze wszystkimi polami', () => {
   assert.equal(d.date, '2026-07-20');
   assert.equal(d.changes, 'DEC-036');
   assert.equal(d.reverses, null);
-  assert.deepEqual(d.area, ['billing', 'webhooki']);
-  assert.equal(d.scope, 'w cenie');
+  assert.deepEqual(d.area, ['billing', 'webhooks']);
+  assert.equal(d.scope, 'in scope');
   assert.equal(d.source, 'Transcripts/2026-07-20-call.md');
-  assert.equal(d.topic, 'Faktura korygująca poza limitem');
-  assert.equal(d.decidedBy, 'Kowalska — call 2026-07-20');
+  assert.equal(d.topic, 'Correcting invoice outside the limit');
+  assert.equal(d.decidedBy, 'Smith — call 2026-07-20');
   assert.equal(d.line, 3);
 });
 
-test('akceptuje separator -, – oraz —', () => {
+test('accepts the separators -, – and —', () => {
   for (const sep of ['-', '–', '—']) {
     const text = VALID.replace('—', sep);
     const { decs, errors } = parseDecisions(text);
@@ -157,13 +157,13 @@ test('akceptuje separator -, – oraz —', () => {
   }
 });
 
-test('pola opcjonalne są null lub pustą listą, gdy ich brak', () => {
+test('optional fields are null or an empty list when absent', () => {
   const minimal = `## DEC-001 — 2026-01-05
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Zespół
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** The team
 `;
   const { decs, errors } = parseDecisions(minimal);
   assert.deepEqual(errors, []);
@@ -174,46 +174,46 @@ test('pola opcjonalne są null lub pustą listą, gdy ich brak', () => {
   assert.deepEqual(decs[0].area, []);
 });
 
-test('zgłasza brak pola wymaganego z numerem linii', () => {
+test('reports a missing required field with a line number', () => {
   const missing = `## DEC-001 — 2026-01-05
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Podjął:** Zespół
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Decided by:** The team
 `;
   const { errors } = parseDecisions(missing);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /^1: /);
-  assert.match(errors[0], /Konsekwencje/);
+  assert.match(errors[0], /Consequences/);
 });
 
-test('odrzuca datę bez zer wiodących', () => {
+test('rejects a date without leading zeros', () => {
   const bad = `## DEC-041 — 2026-9-3
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Z
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** Z
 `;
   const { decs, errors } = parseDecisions(bad);
   assert.equal(decs.length, 0);
   assert.equal(errors.length, 1);
 });
 
-test('odrzuca niedozwoloną wartość Scope', () => {
-  const bad = VALID.replace('**Scope:** w cenie', '**Scope:** gratis');
+test('rejects an invalid Scope value', () => {
+  const bad = VALID.replace('**Scope:** in scope', '**Scope:** gratis');
   const { errors } = parseDecisions(bad);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /Scope/);
 });
 
-test('normalizuje ID do trzech cyfr', () => {
+test('normalises the ID to three digits', () => {
   const short = `## DEC-7 — 2026-01-05
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Z
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** Z
 `;
   const { decs } = parseDecisions(short);
   assert.equal(decs[0].id, 'DEC-007');
@@ -221,12 +221,12 @@ test('normalizuje ID do trzech cyfr', () => {
 });
 ```
 
-- [ ] **Step 3: Uruchom test, upewnij się że pada**
+- [ ] **Step 3: Run the test, confirm it fails**
 
 Run: `node --test lib/parse.test.mjs`
 Expected: FAIL — `Cannot find module './parse.mjs'`
 
-- [ ] **Step 4: Zaimplementuj `lib/parse.mjs`**
+- [ ] **Step 4: Implement `lib/parse.mjs`**
 
 ```js
 // lib/parse.mjs
@@ -234,15 +234,15 @@ const HEADING = /^##\s+(.+?)\s*$/;
 const DEC_HEADING = /^DEC-(\d+)\s*[-–—]\s*(\d{4}-\d{2}-\d{2})$/;
 const FIELD = /^\*\*([^:*]+):\*\*\s*(.*)$/;
 
-const REQUIRED = ['Temat', 'Kontekst', 'Decyzja', 'Konsekwencje', 'Podjął'];
-const OPTIONAL = ['Odwraca', 'Zmienia', 'Obszar', 'Scope', 'Źródło'];
-const SCOPES = ['w cenie', 'change request', 'do wyceny'];
+const REQUIRED = ['Topic', 'Context', 'Decision', 'Consequences', 'Decided by'];
+const OPTIONAL = ['Reverses', 'Changes', 'Area', 'Scope', 'Source'];
+const SCOPES = ['in scope', 'change request', 'needs estimate'];
 
 const KEY = {
-  Temat: 'topic', Kontekst: 'context', Decyzja: 'decision',
-  Konsekwencje: 'consequences', 'Podjął': 'decidedBy',
-  Odwraca: 'reverses', Zmienia: 'changes', Obszar: 'area',
-  Scope: 'scope', 'Źródło': 'source',
+  Topic: 'topic', Context: 'context', Decision: 'decision',
+  Consequences: 'consequences', 'Decided by': 'decidedBy',
+  Reverses: 'reverses', Changes: 'changes', Area: 'area',
+  Scope: 'scope', 'Source': 'source',
 };
 
 const normalizeId = (n) => `DEC-${String(n).padStart(3, '0')}`;
@@ -265,7 +265,7 @@ function parseFields(blockLines, headingLine) {
     }
   }
   for (const name of REQUIRED) {
-    if (!raw[name]) errors.push(`${headingLine}: brak wymaganego pola ${name}`);
+    if (!raw[name]) errors.push(`${headingLine}: missing required field ${name}`);
   }
   return { raw, errors };
 }
@@ -284,7 +284,7 @@ export function parseDecisions(text) {
 
     const m = h[1].match(DEC_HEADING);
     if (!m) {
-      errors.push(`${i + 1}: nagłówek "## ${h[1]}" nie jest poprawnym wpisem DEC`);
+      errors.push(`${i + 1}: heading "## ${h[1]}" is not a valid DEC entry`);
       i = j - 1;
       continue;
     }
@@ -293,7 +293,7 @@ export function parseDecisions(text) {
     errors.push(...fieldErrors);
 
     if (raw.Scope && !SCOPES.includes(raw.Scope)) {
-      errors.push(`${i + 1}: niedozwolona wartość Scope "${raw.Scope}" (dozwolone: ${SCOPES.join(', ')})`);
+      errors.push(`${i + 1}: invalid Scope value "${raw.Scope}" (allowed: ${SCOPES.join(', ')})`);
     }
 
     if (fieldErrors.length === 0) {
@@ -302,13 +302,13 @@ export function parseDecisions(text) {
         num: Number(m[1]),
         date: m[2],
         line: i + 1,
-        area: raw.Obszar ? raw.Obszar.split(',').map((s) => s.trim()).filter(Boolean) : [],
+        area: raw.Area ? raw.Area.split(',').map((s) => s.trim()).filter(Boolean) : [],
       };
       for (const name of [...REQUIRED, ...OPTIONAL]) {
-        if (name === 'Obszar') continue;
+        if (name === 'Area') continue;
         const key = KEY[name];
         let value = raw[name] ?? null;
-        if ((name === 'Odwraca' || name === 'Zmienia') && value) {
+        if ((name === 'Reverses' || name === 'Changes') && value) {
           const n = value.match(/DEC-(\d+)/);
           value = n ? normalizeId(n[1]) : value;
         }
@@ -324,103 +324,103 @@ export function parseDecisions(text) {
 }
 ```
 
-- [ ] **Step 5: Uruchom testy, upewnij się że przechodzą**
+- [ ] **Step 5: Run the tests, confirm they pass**
 
 Run: `node --test lib/parse.test.mjs`
-Expected: PASS — 7 testów
+Expected: PASS — 7 tests
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add package.json lib/parse.mjs lib/parse.test.mjs
-git commit -m "feat: parser wpisow DEC z walidacja pol wymaganych"
+git commit -m "feat: DEC entry parser with required-field validation"
 ```
 
 ---
 
-### Task 2: Twardy błąd na nieparsowalnym nagłówku
+### Task 2: A hard error on an unparseable heading
 
-Reguła §4.2 specu: nagłówek `## `, który nie jest poprawnym wpisem DEC, musi być twardym błędem. Bez tego literówka powoduje ciche zniknięcie decyzji przy zielonym CI — stan gorszy niż kłamiące `Status:` z tamten projekt. Task 1 zwraca już błąd; ten task pokrywa go testami i domyka przypadki brzegowe.
+The spec's rule §4.2: a `## ` heading that is not a valid DEC entry must be a hard error. Without it a typo makes a decision vanish silently under a green CI — a state worse than the lying `Status:` from that project. Task 1 already returns the error; this task covers it with tests and closes the edge cases.
 
 **Files:**
-- Modify: `lib/parse.test.mjs` (dopisz testy)
-- Modify: `lib/parse.mjs` (jeśli testy wykażą lukę)
+- Modify: `lib/parse.test.mjs` (append tests)
+- Modify: `lib/parse.mjs` (if the tests reveal a gap)
 
 **Interfaces:**
 - Consumes: `parseDecisions` z Task 1
-- Produces: brak nowych
+- Produces: nothing new
 
-- [ ] **Step 1: Dopisz testy**
+- [ ] **Step 1: Add tests**
 
 ```js
-// lib/parse.test.mjs — dopisz na końcu
+// lib/parse.test.mjs — append at the end
 
-test('nagłówek nie-DEC to twardy błąd, nie ciche pominięcie', () => {
-  const text = `## Notatki z refinementu
-Coś tu piszemy.
+test('a non-DEC heading is a hard error, not a silent skip', () => {
+  const text = `## Refinement notes
+Some text here.
 
 ## DEC-001 — 2026-01-05
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Z
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** Z
 `;
   const { decs, errors } = parseDecisions(text);
-  assert.equal(decs.length, 1, 'poprawny wpis nadal się parsuje');
+  assert.equal(decs.length, 1, 'the valid entry still parses');
   assert.equal(errors.length, 1);
   assert.match(errors[0], /^1: /);
-  assert.match(errors[0], /nie jest poprawnym wpisem DEC/);
+  assert.match(errors[0], /is not a valid DEC entry/);
 });
 
-test('nagłówek pierwszego poziomu (#) nie jest błędem', () => {
-  const text = `# tamten projekt — Decision Log
+test('a first-level heading (#) is not an error', () => {
+  const text = `# PROJECT — Decision Log
 
-Preambuła.
+Preamble.
 
 ## DEC-001 — 2026-01-05
-**Temat:** T
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Z
+**Topic:** T
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** Z
 `;
   const { decs, errors } = parseDecisions(text);
   assert.deepEqual(errors, []);
   assert.equal(decs.length, 1);
 });
 
-test('zły prefiks ID to błąd nagłówka', () => {
+test('a wrong ID prefix is a heading error', () => {
   const { decs, errors } = parseDecisions(`## DECISION-1 — 2026-01-05
-**Temat:** T
+**Topic:** T
 `);
   assert.equal(decs.length, 0);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /nie jest poprawnym wpisem DEC/);
+  assert.match(errors[0], /is not a valid DEC entry/);
 });
 
-test('pusty plik nie generuje błędów', () => {
+test('an empty file produces no errors', () => {
   const { decs, errors } = parseDecisions('');
   assert.deepEqual(decs, []);
   assert.deepEqual(errors, []);
 });
 ```
 
-- [ ] **Step 2: Uruchom testy**
+- [ ] **Step 2: Run the tests**
 
 Run: `node --test lib/parse.test.mjs`
-Expected: PASS — implementacja z Task 1 spełnia te reguły. Jeśli któryś pada, popraw `lib/parse.mjs` i uruchom ponownie.
+Expected: PASS — the implementation from Task 1 satisfies these rules. If one fails, fix `lib/parse.mjs` and run again.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add lib/parse.test.mjs lib/parse.mjs
-git commit -m "test: twardy blad na nieparsowalnym nagłowku DEC"
+git commit -m "test: hard error on an unparseable DEC heading"
 ```
 
 ---
 
-### Task 3: Derywacja statusu z relacji Odwraca i Zmienia
+### Task 3: Derywacja statusu z relacji Reverses i Changes
 
 **Files:**
 - Create: `lib/status.mjs`
@@ -430,7 +430,7 @@ git commit -m "test: twardy blad na nieparsowalnym nagłowku DEC"
 - Consumes: `Dec[]` z `parseDecisions`
 - Produces: `deriveStatus(decs: Dec[]) → { active: {dec, changedBy: string[]}[], history: {dec, reversedBy: string}[], errors: string[] }`
 
-- [ ] **Step 1: Napisz test, który nie przechodzi**
+- [ ] **Step 1: Write a failing test**
 
 ```js
 // lib/status.test.mjs
@@ -446,7 +446,7 @@ const dec = (num, date, extra = {}) => ({
   ...extra,
 });
 
-test('wpis bez relacji jest aktywny', () => {
+test('an entry with no relation is active', () => {
   const { active, history, errors } = deriveStatus([dec(1, '2026-01-01')]);
   assert.deepEqual(errors, []);
   assert.equal(active.length, 1);
@@ -454,7 +454,7 @@ test('wpis bez relacji jest aktywny', () => {
   assert.equal(history.length, 0);
 });
 
-test('Odwraca przenosi cel do historii', () => {
+test('Reverses moves the target into history', () => {
   const decs = [dec(1, '2026-01-01'), dec(2, '2026-02-01', { reverses: 'DEC-001' })];
   const { active, history } = deriveStatus(decs);
   assert.deepEqual(active.map((a) => a.dec.id), ['DEC-002']);
@@ -463,7 +463,7 @@ test('Odwraca przenosi cel do historii', () => {
   assert.equal(history[0].reversedBy, 'DEC-002');
 });
 
-test('Zmienia zostawia cel aktywnym i adnotuje go', () => {
+test('Changes leaves the target active and annotates it', () => {
   const decs = [dec(1, '2026-01-01'), dec(2, '2026-02-01', { changes: 'DEC-001' })];
   const { active, history } = deriveStatus(decs);
   assert.equal(history.length, 0);
@@ -472,7 +472,7 @@ test('Zmienia zostawia cel aktywnym i adnotuje go', () => {
   assert.deepEqual(target.changedBy, ['DEC-002']);
 });
 
-test('łańcuch odwróceń zostawia aktywnym tylko ostatni', () => {
+test('a chain of reversals leaves only the last one active', () => {
   const decs = [
     dec(1, '2026-01-01'),
     dec(2, '2026-02-01', { reverses: 'DEC-001' }),
@@ -482,7 +482,7 @@ test('łańcuch odwróceń zostawia aktywnym tylko ostatni', () => {
   assert.deepEqual(active.map((a) => a.dec.id), ['DEC-003']);
 });
 
-test('wiele wpisów może zmieniać ten sam cel', () => {
+test('several entries may change the same target', () => {
   const decs = [
     dec(1, '2026-01-01'),
     dec(2, '2026-02-01', { changes: 'DEC-001' }),
@@ -493,19 +493,19 @@ test('wiele wpisów może zmieniać ten sam cel', () => {
   assert.deepEqual(target.changedBy, ['DEC-002', 'DEC-003']);
 });
 
-test('aktywne są posortowane malejąco po dacie', () => {
+test('active entries are sorted by date, descending', () => {
   const decs = [dec(1, '2026-01-01'), dec(2, '2026-03-01'), dec(3, '2026-02-01')];
   const { active } = deriveStatus(decs);
   assert.deepEqual(active.map((a) => a.dec.id), ['DEC-002', 'DEC-003', 'DEC-001']);
 });
 ```
 
-- [ ] **Step 2: Uruchom test, upewnij się że pada**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `node --test lib/status.test.mjs`
 Expected: FAIL — `Cannot find module './status.mjs'`
 
-- [ ] **Step 3: Zaimplementuj `lib/status.mjs`**
+- [ ] **Step 3: Implement `lib/status.mjs`**
 
 ```js
 // lib/status.mjs
@@ -536,8 +536,8 @@ export function deriveStatus(decs) {
     }
   }
 
-  // assert: przy egzekwowanym "tylko wstecz" cykl jest niemożliwy.
-  // Ten warunek nie jest funkcją produktu — to zabezpieczenie przed regresją reguły.
+  // assert: with "backwards only" enforced, a cycle is impossible.
+  // This check is not a product feature — it guards the rule against regression.
   for (const d of decs) {
     const t = d.reverses ?? d.changes;
     if (t && byId.get(t)?.reverses === d.id) {
@@ -549,21 +549,21 @@ export function deriveStatus(decs) {
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [ ] **Step 4: Run the tests**
 
 Run: `node --test lib/status.test.mjs`
-Expected: PASS — 6 testów
+Expected: PASS — 6 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/status.mjs lib/status.test.mjs
-git commit -m "feat: derywacja statusu z relacji Odwraca i Zmienia"
+git commit -m "feat: derive status from the Reverses and Changes relations"
 ```
 
 ---
 
-### Task 4: Walidacja relacji między wpisami
+### Task 4: Validating relations between entries
 
 **Files:**
 - Modify: `lib/status.mjs`
@@ -571,44 +571,44 @@ git commit -m "feat: derywacja statusu z relacji Odwraca i Zmienia"
 
 **Interfaces:**
 - Consumes: `deriveStatus` z Task 3
-- Produces: bez zmian w sygnaturze; rozszerzona lista `errors`
+- Produces: no signature change; an extended `errors` list
 
-- [ ] **Step 1: Dopisz testy, które nie przechodzą**
+- [ ] **Step 1: Add failing tests**
 
 ```js
-// lib/status.test.mjs — dopisz na końcu
+// lib/status.test.mjs — append at the end
 
-test('relacja do nieistniejącego DEC to błąd', () => {
+test('a relation to a non-existent DEC is an error', () => {
   const { errors } = deriveStatus([dec(2, '2026-02-01', { reverses: 'DEC-999' })]);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /DEC-999/);
-  assert.match(errors[0], /nie istnieje/);
+  assert.match(errors[0], /does not exist/);
 });
 
-test('relacja wskazująca w przód to błąd', () => {
+test('a forward-pointing relation is an error', () => {
   const decs = [dec(1, '2026-01-01', { reverses: 'DEC-002' }), dec(2, '2026-02-01')];
   const { errors } = deriveStatus(decs);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /wcześniejszy/);
+  assert.match(errors[0], /earlier/);
 });
 
-test('przy równej dacie rozstrzyga numer ID', () => {
+test('on an equal date the ID number decides', () => {
   const decs = [dec(1, '2026-01-01'), dec(2, '2026-01-01', { changes: 'DEC-001' })];
-  assert.deepEqual(deriveStatus(decs).errors, [], 'wyższe ID może wskazywać na niższe');
+  assert.deepEqual(deriveStatus(decs).errors, [], 'a higher ID may point at a lower one');
 
   const backwards = [dec(1, '2026-01-01', { changes: 'DEC-002' }), dec(2, '2026-01-01')];
-  assert.equal(deriveStatus(backwards).errors.length, 1, 'niższe ID nie może wskazywać na wyższe');
+  assert.equal(deriveStatus(backwards).errors.length, 1, 'a lower ID may not point at a higher one');
 });
 
-test('duplikat ID to błąd', () => {
+test('a duplicate ID is an error', () => {
   const decs = [dec(1, '2026-01-01'), { ...dec(1, '2026-02-01'), line: 20 }];
   const { errors } = deriveStatus(decs);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /duplikat/i);
+  assert.match(errors[0], /duplicate/i);
   assert.match(errors[0], /DEC-001/);
 });
 
-test('wpis nie może deklarować obu relacji naraz', () => {
+test('an entry may not declare both relations at once', () => {
   const decs = [
     dec(1, '2026-01-01'),
     dec(2, '2026-01-02'),
@@ -616,10 +616,10 @@ test('wpis nie może deklarować obu relacji naraz', () => {
   ];
   const { errors } = deriveStatus(decs);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /jednocześnie/);
+  assert.match(errors[0], /both/);
 });
 
-test('Zmienia na wpis już odwrócony to ostrzeżenie w errors', () => {
+test('Changes pointing at an already reversed entry surfaces in errors', () => {
   const decs = [
     dec(1, '2026-01-01'),
     dec(2, '2026-02-01', { reverses: 'DEC-001' }),
@@ -627,18 +627,18 @@ test('Zmienia na wpis już odwrócony to ostrzeżenie w errors', () => {
   ];
   const { errors } = deriveStatus(decs);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /odwrócon/);
+  assert.match(errors[0], /reversed/);
 });
 ```
 
-- [ ] **Step 2: Uruchom testy, upewnij się że padają**
+- [ ] **Step 2: Run the tests, confirm they fail**
 
 Run: `node --test lib/status.test.mjs`
-Expected: FAIL — 6 nowych testów pada, 6 z Task 3 przechodzi
+Expected: FAIL — the 6 new tests fail, the 6 from Task 3 pass
 
-- [ ] **Step 3: Zastąp `lib/status.mjs` w całości**
+- [ ] **Step 3: Replace `lib/status.mjs` entirely**
 
-Poniższa wersja zastępuje plik z Task 3. Blok „assert: cykl" z Task 3 znika — przy egzekwowanym „tylko wstecz" cykl jest matematycznie niemożliwy, a martwy kod myli czytelnika.
+The version below replaces the file from Task 3. The "assert: cycle" block from Task 3 disappears — with "backwards only" enforced a cycle is mathematically impossible, and dead code misleads the reader.
 
 ```js
 // lib/status.mjs
@@ -648,7 +648,7 @@ export function deriveStatus(decs) {
   const errors = [];
   const byId = new Map(decs.map((d) => [d.id, d]));
 
-  // --- walidacja poprzedza budowę grafu ---
+  // --- validation runs before the graph is built ---
   const seen = new Set();
   for (const d of decs) {
     if (seen.has(d.id)) errors.push(`${d.line}: duplikat ID ${d.id}`);
@@ -657,23 +657,23 @@ export function deriveStatus(decs) {
 
   for (const d of decs) {
     if (d.reverses && d.changes) {
-      errors.push(`${d.line}: ${d.id} deklaruje jednocześnie Odwraca i Zmienia — dozwolona jest jedna relacja`);
+      errors.push(`${d.line}: ${d.id} declares both Reverses and Changes — only one relation is allowed`);
       continue;
     }
     const target = d.reverses ?? d.changes;
     if (!target) continue;
     const t = byId.get(target);
     if (!t) {
-      errors.push(`${d.line}: ${d.id} wskazuje na ${target}, który nie istnieje`);
+      errors.push(`${d.line}: ${d.id} points at ${target}, which does not exist`);
       continue;
     }
     if (order(t) >= order(d)) {
-      errors.push(`${d.line}: ${d.id} musi wskazywać na wpis wcześniejszy niż ${target}`);
+      errors.push(`${d.line}: ${d.id} must point at an entry earlier than ${target}`);
     }
   }
 
-  // Cykl relacji jest niemożliwy: każda relacja musi wskazywać wstecz wg pary
-  // (data, ID), a ten porządek jest liniowy. Walidacja wyżej to gwarantuje.
+  // A relation cycle is impossible: every relation must point backwards by the
+  // (date, ID) pair, and that order is linear. The validation above guarantees it.
 
   // --- budowa grafu ---
   const reversedBy = new Map();
@@ -688,11 +688,11 @@ export function deriveStatus(decs) {
 
   for (const d of decs) {
     if (d.changes && reversedBy.has(d.changes)) {
-      errors.push(`${d.line}: ${d.id} zmienia ${d.changes}, który został odwrócony przez ${reversedBy.get(d.changes)}`);
+      errors.push(`${d.line}: ${d.id} changes ${d.changes}, which was reversed by ${reversedBy.get(d.changes)}`);
     }
   }
 
-  // --- podział na aktywne i historię, najnowsze pierwsze ---
+  // --- split into active and history, newest first ---
   const sorted = [...decs].sort((a, b) => (order(a) < order(b) ? 1 : -1));
   const active = [];
   const history = [];
@@ -700,7 +700,7 @@ export function deriveStatus(decs) {
     if (reversedBy.has(d.id)) {
       history.push({ dec: d, reversedBy: reversedBy.get(d.id) });
     } else {
-      // Wpis, ktory sam zostal odwrocony, nie moze dalej "zmieniac" celu —
+      // An entry that was itself reversed can no longer "change" its target —
       // jego doprecyzowanie umiera razem z nim.
       const changers = (changedBy.get(d.id) ?? []).filter((id) => !reversedBy.has(id));
       active.push({ dec: d, changedBy: changers.sort() });
@@ -711,21 +711,21 @@ export function deriveStatus(decs) {
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [ ] **Step 4: Run the tests**
 
 Run: `node --test lib/status.test.mjs`
-Expected: PASS — 12 testów
+Expected: PASS — 12 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/status.mjs lib/status.test.mjs
-git commit -m "feat: walidacja relacji miedzy wpisami DEC"
+git commit -m "feat: validation of relations between DEC entries"
 ```
 
 ---
 
-### Task 5: Render bloku i wstawianie między znaczniki
+### Task 5: Rendering the block and splicing it between the markers
 
 **Files:**
 - Create: `lib/render.mjs`
@@ -734,11 +734,11 @@ git commit -m "feat: walidacja relacji miedzy wpisami DEC"
 **Interfaces:**
 - Consumes: wynik `deriveStatus`
 - Produces:
-  - `renderBlock({active, history}) → string` — sama treść bloku, bez znaczników
-  - `spliceBlock(claudeMd: string, block: string) → string` — rzuca `Error`, gdy brak znaczników
-  - `OPEN_MARKER`, `CLOSE_MARKER` — stałe eksportowane
+  - `renderBlock({active, history}) → string` — the block content itself, without markers
+  - `spliceBlock(claudeMd: string, block: string) → string` — throws `Error` when the markers are missing
+  - `OPEN_MARKER`, `CLOSE_MARKER` — exported constants
 
-- [ ] **Step 1: Napisz test, który nie przechodzi**
+- [ ] **Step 1: Write a failing test**
 
 ```js
 // lib/render.test.mjs
@@ -752,41 +752,41 @@ const dec = (num, date, topic, area = []) => ({
   context: 'K', decision: 'D', consequences: 'KO', decidedBy: 'Z',
 });
 
-test('renderuje tabelę aktywnych decyzji', () => {
+test('renders the table of active decisions', () => {
   const out = renderBlock({
-    active: [{ dec: dec(2, '2026-02-01', 'Drugi temat', ['auth']), changedBy: [] }],
+    active: [{ dec: dec(2, '2026-02-01', 'Second topic', ['auth']), changedBy: [] }],
     history: [],
   });
-  assert.match(out, /\| DEC \| Data \| Obszar \| Temat \|/);
-  assert.match(out, /\| DEC-002 \| 2026-02-01 \| auth \| Drugi temat \|/);
+  assert.match(out, /\| DEC \| Data \| Area \| Topic \|/);
+  assert.match(out, /\| DEC-002 \| 2026-02-01 \| auth \| Second topic \|/);
 });
 
-test('adnotuje wpisy zmienione przez późniejsze', () => {
+test('annotates entries changed by later ones', () => {
   const out = renderBlock({
     active: [{ dec: dec(1, '2026-01-01', 'Pierwszy'), changedBy: ['DEC-002'] }],
     history: [],
   });
-  assert.match(out, /Pierwszy \*\(zmienione przez DEC-002\)\*/);
+  assert.match(out, /First \*\(changed by DEC-002\)\*/);
 });
 
-test('sekcja historii pojawia się tylko gdy coś odwrócono', () => {
-  const bez = renderBlock({ active: [{ dec: dec(1, '2026-01-01', 'A'), changedBy: [] }], history: [] });
-  assert.doesNotMatch(bez, /Odwrócone/);
+test('the history section appears only when something was reversed', () => {
+  const without = renderBlock({ active: [{ dec: dec(1, '2026-01-01', 'A'), changedBy: [] }], history: [] });
+  assert.doesNotMatch(without, /Reversed/);
 
   const z = renderBlock({
     active: [],
     history: [{ dec: dec(1, '2026-01-01', 'A'), reversedBy: 'DEC-002' }],
   });
-  assert.match(z, /Odwrócone/);
-  assert.match(z, /DEC-001.*odwrócony przez DEC-002/);
+  assert.match(z, /Reversed/);
+  assert.match(z, /DEC-001.*reversed by DEC-002/);
 });
 
-test('pusty zbiór daje czytelny komunikat, nie pustą tabelę', () => {
+test('an empty set gives a readable message, not an empty table', () => {
   const out = renderBlock({ active: [], history: [] });
-  assert.match(out, /Brak aktywnych decyzji/);
+  assert.match(out, /No active decisions/);
 });
 
-test('escapuje pionową kreskę w treści, żeby nie rozbić tabeli', () => {
+test('escapes the pipe character in content so the table does not break', () => {
   const out = renderBlock({
     active: [{ dec: dec(1, '2026-01-01', 'A | B'), changedBy: [] }],
     history: [],
@@ -794,41 +794,41 @@ test('escapuje pionową kreskę w treści, żeby nie rozbić tabeli', () => {
   assert.match(out, /A \\\| B/);
 });
 
-test('spliceBlock podmienia treść między znacznikami', () => {
-  const md = `# Projekt\n\nTekst przed.\n\n${OPEN_MARKER}\nstara treść\n${CLOSE_MARKER}\n\nTekst po.\n`;
-  const out = spliceBlock(md, 'nowa treść');
-  assert.match(out, /nowa treść/);
-  assert.doesNotMatch(out, /stara treść/);
+test('spliceBlock replaces the content between the markers', () => {
+  const md = `# Project\n\nText before.\n\n${OPEN_MARKER}\nold content\n${CLOSE_MARKER}\n\nText after.\n`;
+  const out = spliceBlock(md, 'new content');
+  assert.match(out, /new content/);
+  assert.doesNotMatch(out, /old content/);
   assert.match(out, /Tekst przed\./);
   assert.match(out, /Tekst po\./);
   assert.equal(out.match(new RegExp(CLOSE_MARKER.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&'), 'g')).length, 1);
 });
 
-test('spliceBlock jest idempotentny', () => {
+test('spliceBlock is idempotent', () => {
   const md = `${OPEN_MARKER}\nx\n${CLOSE_MARKER}\n`;
   assert.equal(spliceBlock(spliceBlock(md, 'y'), 'y'), spliceBlock(md, 'y'));
 });
 
-test('brak znaczników to błąd z instrukcją init, nie dopisanie na końcu', () => {
+test('missing markers is an error pointing at init, not an append at the end', () => {
   assert.throws(() => spliceBlock('# Projekt\nbez znacznikow\n', 'x'), /init/);
 });
 
-test('sam znacznik otwierający bez zamykającego to błąd', () => {
+test('an opening marker without a closing one is an error', () => {
   assert.throws(() => spliceBlock(`${OPEN_MARKER}\nx\n`, 'y'), /znacznik/);
 });
 ```
 
-- [ ] **Step 2: Uruchom test, upewnij się że pada**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `node --test lib/render.test.mjs`
 Expected: FAIL — `Cannot find module './render.mjs'`
 
-- [ ] **Step 3: Zaimplementuj `lib/render.mjs`**
+- [ ] **Step 3: Implement `lib/render.mjs`**
 
 ```js
 // lib/render.mjs
-export const OPEN_MARKER = '<!-- WYGENEROWANE:decyzje — nie edytuj. Uruchom: npx … index -->';
-export const CLOSE_MARKER = '<!-- /WYGENEROWANE:decyzje -->';
+export const OPEN_MARKER = '<!-- GENERATED:decisions — do not edit. Run: node <kit>/bin/knowledge.mjs index -->';
+export const CLOSE_MARKER = '<!-- /GENERATED:decisions -->';
 
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|');
 
@@ -836,22 +836,22 @@ export function renderBlock({ active, history }) {
   const out = [];
 
   if (active.length === 0) {
-    out.push('_Brak aktywnych decyzji._');
+    out.push('_No active decisions._');
   } else {
-    out.push('| DEC | Data | Obszar | Temat |');
+    out.push('| DEC | Data | Area | Topic |');
     out.push('|-----|------|--------|-------|');
     for (const { dec, changedBy } of active) {
-      const suffix = changedBy.length ? ` *(zmienione przez ${changedBy.join(', ')})*` : '';
+      const suffix = changedBy.length ? ` *(changed by ${changedBy.join(', ')})*` : '';
       out.push(`| ${dec.id} | ${dec.date} | ${cell(dec.area.join(', '))} | ${cell(dec.topic)}${suffix} |`);
     }
   }
 
   if (history.length > 0) {
     out.push('');
-    out.push('**Odwrócone (historia):**');
+    out.push('**Reversed (history):**');
     out.push('');
     for (const { dec, reversedBy } of history) {
-      out.push(`- ${dec.id} (${dec.date}) — odwrócony przez ${reversedBy}`);
+      out.push(`- ${dec.id} (${dec.date}) — reversed by ${reversedBy}`);
     }
   }
 
@@ -864,12 +864,12 @@ export function spliceBlock(claudeMd, block) {
 
   if (start === -1 && end === -1) {
     throw new Error(
-      'Brak znaczników WYGENEROWANE:decyzje w CLAUDE.md. Uruchom `repobrain init`, ' +
-      'żeby je dodać. Generator nigdy nie dopisuje bloku na końcu pliku.',
+      'No GENERATED:decisions markers in CLAUDE.md. Run `repobrain init` to add them. ' +
+      'The generator never appends the block at the end of the file.',
     );
   }
   if (start === -1 || end === -1 || end < start) {
-    throw new Error('Uszkodzona para znaczników WYGENEROWANE:decyzje w CLAUDE.md — napraw ręcznie.');
+    throw new Error('Broken GENERATED:decisions marker pair in CLAUDE.md — fix it manually.');
   }
 
   const before = claudeMd.slice(0, start + OPEN_MARKER.length);
@@ -878,21 +878,21 @@ export function spliceBlock(claudeMd, block) {
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [ ] **Step 4: Run the tests**
 
 Run: `node --test lib/render.test.mjs`
-Expected: PASS — 9 testów
+Expected: PASS — 9 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/render.mjs lib/render.test.mjs
-git commit -m "feat: render bloku decyzji i wstawianie miedzy znaczniki"
+git commit -m "feat: render the decision block and splice it between the markers"
 ```
 
 ---
 
-### Task 6: Reguły integralności zależne od systemu plików
+### Task 6: Integrity rules that depend on the filesystem
 
 **Files:**
 - Create: `lib/integrity.mjs`
@@ -901,10 +901,10 @@ git commit -m "feat: render bloku decyzji i wstawianie miedzy znaczniki"
 **Interfaces:**
 - Consumes: `Dec[]` z `parseDecisions`
 - Produces: `checkIntegrity({ decs, rawText, clientNames, fileExists }) → string[]`
-  - `fileExists` to wstrzykiwana funkcja `(path: string) => boolean` — pozwala testować bez dotykania dysku; `bin/` wstrzykuje wersję opartą na `node:fs`.
-  - `clientNames` to **lista nazw rozdzielona przecinkami** (`string | null`), **nie wyrażenie regularne**. Dopasowanie po podciągu, bez rozróżniania wielkości liter. Gdy `null`, pusty string albo sama interpunkcja — reguła nie działa.
+  - `fileExists` is an injected function `(path: string) => boolean` — it allows testing without touching the disk; `bin/` injects a `node:fs`-based version.
+  - `clientNames` is a **comma-separated list of names** (`string | null`), **not a regular expression**. Matching is by substring, case-insensitive. When `null`, an empty string or punctuation alone — the rule does not apply.
 
-- [ ] **Step 1: Napisz test, który nie przechodzi**
+- [ ] **Step 1: Write a failing test**
 
 ```js
 // lib/integrity.test.mjs
@@ -915,94 +915,94 @@ import { checkIntegrity } from './integrity.mjs';
 const dec = (extra = {}) => ({
   id: 'DEC-001', num: 1, date: '2026-01-01', line: 3,
   reverses: null, changes: null, area: [], scope: null, source: null,
-  topic: 'T', context: 'K', decision: 'D', consequences: 'KO', decidedBy: 'Zespół',
+  topic: 'T', context: 'K', decision: 'D', consequences: 'KO', decidedBy: 'The team',
   ...extra,
 });
 
 const base = { clientNames: null, fileExists: () => true, rawText: '' };
 
-test('Źródło wskazujące na istniejący plik jest OK', () => {
+test('a Source pointing at an existing file is OK', () => {
   const errors = checkIntegrity({ ...base, decs: [dec({ source: 'Transcripts/a.md' })] });
   assert.deepEqual(errors, []);
 });
 
-test('Źródło wskazujące na nieistniejący plik to błąd', () => {
+test('a Source pointing at a missing file is an error', () => {
   const errors = checkIntegrity({
-    ...base, fileExists: () => false, decs: [dec({ source: 'Transcripts/brak.md' })],
+    ...base, fileExists: () => false, decs: [dec({ source: 'Transcripts/missing.md' })],
   });
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /Transcripts\/brak\.md/);
+  assert.match(errors[0], /Transcripts\/missing\.md/);
 });
 
-test('decyzja klienta bez Źródła to błąd, gdy podano clientNames', () => {
+test('a client decision without a Source is an error when clientNames is given', () => {
   const errors = checkIntegrity({
-    ...base, clientNames: 'Kowalska, klient', decs: [dec({ decidedBy: 'Kowalska — call' })],
+    ...base, clientNames: 'Smith, client', decs: [dec({ decidedBy: 'Smith — call' })],
   });
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /Źródło/);
+  assert.match(errors[0], /Source/);
 });
 
-test('decyzja zespołowa bez Źródła jest OK', () => {
+test('a team decision without a Source is OK', () => {
   const errors = checkIntegrity({
-    ...base, clientNames: 'Kowalska, klient', decs: [dec({ decidedBy: 'Zespół — standup' })],
+    ...base, clientNames: 'Smith, client', decs: [dec({ decidedBy: 'The team — standup' })],
   });
   assert.deepEqual(errors, []);
 });
 
-test('bez clientNames reguła nie działa', () => {
-  const errors = checkIntegrity({ ...base, decs: [dec({ decidedBy: 'Kowalska' })] });
+test('without clientNames the rule does not apply', () => {
+  const errors = checkIntegrity({ ...base, decs: [dec({ decidedBy: 'Smith' })] });
   assert.deepEqual(errors, []);
 });
 
-test('wykrywa placeholdery z zamkniętej listy', () => {
+test('detects placeholders from the closed list', () => {
   const raw = `## DEC-001 — 2026-01-01
-**Podjął:** [uzupełnij]
-**Temat:** coś [data] tutaj
+**Decided by:** [fill in]
+**Topic:** something [date] here
 `;
   const errors = checkIntegrity({ ...base, rawText: raw, decs: [] });
   assert.equal(errors.length, 2);
   assert.match(errors[0], /^2: /);
-  assert.match(errors[0], /\[uzupełnij\]/);
+  assert.match(errors[0], /\[fill in\]/);
   assert.match(errors[1], /^3: /);
 });
 
-test('nawias w treści nie jest placeholderem', () => {
-  const raw = `**Decyzja:** Pokazujemy [modal z ostrzeżeniem] przed [usuwanie konta], pole [id] zostaje.\n`;
+test('brackets in the content are not placeholders', () => {
+  const raw = `**Decision:** We show a [warning modal] before [account deletion], the [id] field stays.\n`;
   const errors = checkIntegrity({ ...base, rawText: raw, decs: [] });
-  assert.deepEqual(errors, [], 'legalne nawiasy w treści nie mogą dawać fałszywych alarmów');
+  assert.deepEqual(errors, [], 'legitimate brackets in the content must not raise false alarms');
 });
 
-test('TODO w treści jest placeholderem', () => {
-  const errors = checkIntegrity({ ...base, rawText: 'TODO: dopisać\n', decs: [] });
+test('TODO in the content is a placeholder', () => {
+  const errors = checkIntegrity({ ...base, rawText: 'TODO: write this up\n', decs: [] });
   assert.equal(errors.length, 1);
 });
 ```
 
-- [ ] **Step 2: Uruchom test, upewnij się że pada**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `node --test lib/integrity.test.mjs`
 Expected: FAIL — `Cannot find module './integrity.mjs'`
 
-- [ ] **Step 3: Zaimplementuj `lib/integrity.mjs`**
+- [ ] **Step 3: Implement `lib/integrity.mjs`**
 
 ```js
 // lib/integrity.mjs
-const PLACEHOLDERS = ['[data]', '[uzupełnij]', '[TBD]', '[verify]', 'TODO'];
+const PLACEHOLDERS = ['[date]', '[fill in]', '[TBD]', '[verify]', 'TODO'];
 
 export function checkIntegrity({ decs, rawText, clientNames, fileExists }) {
   const errors = [];
 
-  // Lista nazw, nie wyrazenie regularne. Wejscie pochodzi z CLI, a RegExp
-  // przyjmuje od uzytkownika zarowno bledy skladni (wyjatek — lamie kontrakt
-  // "nie rzucamy"), jak i wzorce o katastrofalnym backtrackingu (zawieszenie
+  // A list of names, not a regular expression. The input comes from the CLI, and
+  // RegExp accepts from the user both syntax errors (an exception — it breaks the
+  // breaks the "we never throw" contract) and patterns with catastrophic
   // procesu CI). Dopasowanie po podciagu pokrywa realny przypadek — wskazanie
   // klienta po nazwisku — a obie podatnosci znikaja konstrukcyjnie.
   //
-  // Kompromis przyjety swiadomie: dopasowanie po podciagu jest luzniejsze niz
+  // A deliberately accepted trade-off: substring matching is looser than
   // wyrazenie regularne. Nazwa "Jo" trafi w "Jozef", "Johanna" i "Major".
-  // Kierunek bledu jest bezpieczny — narzedzie zazada pola Zrodlo tam, gdzie
-  // nie musi, zamiast przeoczyc decyzje klienta. Operator dobiera nazwy
-  // wystarczajaco dlugie, zeby uniknac kolizji.
+  // The direction of the error is safe — the tool demands a Source field where
+  // it need not, instead of overlooking a client decision. The operator picks
+  // names long enough to avoid collisions.
   const names = (clientNames ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -1010,12 +1010,12 @@ export function checkIntegrity({ decs, rawText, clientNames, fileExists }) {
 
   for (const d of decs) {
     if (d.source && !fileExists(d.source)) {
-      errors.push(`${d.line}: ${d.id} — Źródło wskazuje na nieistniejący plik ${d.source}`);
+      errors.push(`${d.line}: ${d.id} — Source points at a missing file ${d.source}`);
     }
     if (names.length) {
       const decidedBy = String(d.decidedBy ?? '').toLowerCase();
       if (names.some((n) => decidedBy.includes(n)) && !d.source) {
-        errors.push(`${d.line}: ${d.id} — decyzja klienta wymaga pola Źródło`);
+        errors.push(`${d.line}: ${d.id} — a client decision requires the Source field`);
       }
     }
   }
@@ -1023,7 +1023,7 @@ export function checkIntegrity({ decs, rawText, clientNames, fileExists }) {
   rawText.split('\n').forEach((line, idx) => {
     for (const p of PLACEHOLDERS) {
       if (line.includes(p)) {
-        errors.push(`${idx + 1}: niewypełniony placeholder ${p}`);
+        errors.push(`${idx + 1}: unfilled placeholder ${p}`);
       }
     }
   });
@@ -1032,21 +1032,21 @@ export function checkIntegrity({ decs, rawText, clientNames, fileExists }) {
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [ ] **Step 4: Run the tests**
 
 Run: `node --test lib/integrity.test.mjs`
-Expected: PASS — 8 testów
+Expected: PASS — 8 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/integrity.mjs lib/integrity.test.mjs
-git commit -m "feat: reguly integralnosci - Zrodlo, decyzje klienta, placeholdery"
+git commit -m "feat: integrity rules - Source, client decisions, placeholders"
 ```
 
 ---
 
-### Task 7: Trzy bramki CI
+### Task 7: The three CI gates
 
 **Files:**
 - Create: `lib/gates.mjs`
@@ -1059,7 +1059,7 @@ git commit -m "feat: reguly integralnosci - Zrodlo, decyzje klienta, placeholder
   - `gateIndexFresh({ decisionsText, claudeMdText }) → string[]`
   - `gateDecisionRequired({ changedFiles, paths, labels }) → string[]`
 
-- [ ] **Step 1: Napisz test, który nie przechodzi**
+- [ ] **Step 1: Write a failing test**
 
 ```js
 // lib/gates.test.mjs
@@ -1068,65 +1068,65 @@ import assert from 'node:assert/strict';
 import { gateIntegrity, gateIndexFresh, gateDecisionRequired } from './gates.mjs';
 import { OPEN_MARKER, CLOSE_MARKER } from './render.mjs';
 
-const DECISIONS = `# Decyzje
+const DECISIONS = `# Decisions
 
 ## DEC-001 — 2026-01-05
-**Obszar:** auth
-**Temat:** Logowanie przez OTP
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Zespół
+**Area:** auth
+**Topic:** OTP login
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** The team
 `;
 
-test('gateIntegrity zwraca pustą listę dla poprawnego pliku', () => {
+test('gateIntegrity returns an empty list for a valid file', () => {
   const errors = gateIntegrity({ decisionsText: DECISIONS, clientNames: null, fileExists: () => true });
   assert.deepEqual(errors, []);
 });
 
-test('gateIntegrity agreguje błędy parsera, relacji i integralności', () => {
+test('gateIntegrity aggregates parser, relation and integrity errors', () => {
   const bad = `## Notatka
 ## DEC-002 — 2026-02-01
-**Odwraca:** DEC-999
-**Temat:** [uzupełnij]
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Z
+**Reverses:** DEC-999
+**Topic:** [fill in]
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** Z
 `;
   const errors = gateIntegrity({ decisionsText: bad, clientNames: null, fileExists: () => true });
   assert.ok(errors.length >= 3, `oczekiwano >=3 bledow, otrzymano ${errors.length}: ${errors.join(' | ')}`);
-  assert.ok(errors.some((e) => /nie jest poprawnym wpisem DEC/.test(e)));
+  assert.ok(errors.some((e) => /is not a valid DEC entry/.test(e)));
   assert.ok(errors.some((e) => /DEC-999/.test(e)));
-  assert.ok(errors.some((e) => /uzupełnij/.test(e)));
+  assert.ok(errors.some((e) => /fill in/.test(e)));
 });
 
-test('gateIndexFresh przechodzi, gdy blok jest aktualny', () => {
-  const fresh = `# P\n\n${OPEN_MARKER}\n| DEC | Data | Obszar | Temat |\n|-----|------|--------|-------|\n| DEC-001 | 2026-01-05 | auth | Logowanie przez OTP |\n${CLOSE_MARKER}\n`;
+test('gateIndexFresh passes when the block is up to date', () => {
+  const fresh = `# P\n\n${OPEN_MARKER}\n| DEC | Data | Area | Topic |\n|-----|------|--------|-------|\n| DEC-001 | 2026-01-05 | auth | OTP login |\n${CLOSE_MARKER}\n`;
   assert.deepEqual(gateIndexFresh({ decisionsText: DECISIONS, claudeMdText: fresh }), []);
 });
 
-test('gateIndexFresh wykrywa nieaktualny blok', () => {
+test('gateIndexFresh detects a stale block', () => {
   const stale = `# P\n\n${OPEN_MARKER}\nstare\n${CLOSE_MARKER}\n`;
   const errors = gateIndexFresh({ decisionsText: DECISIONS, claudeMdText: stale });
   assert.equal(errors.length, 1);
   assert.match(errors[0], /index/);
 });
 
-test('gateIndexFresh zgłasza brak znaczników zamiast rzucać', () => {
+test('gateIndexFresh reports missing markers instead of throwing', () => {
   const errors = gateIndexFresh({ decisionsText: DECISIONS, claudeMdText: '# P\nbez znacznikow\n' });
   assert.equal(errors.length, 1);
   assert.match(errors[0], /init/);
 });
 
-test('gateDecisionRequired przepuszcza PR poza ścieżkami decyzyjnymi', () => {
+test('gateDecisionRequired lets through a PR outside the decision paths', () => {
   const errors = gateDecisionRequired({
     changedFiles: ['src/button.tsx'], paths: ['docs/specs/**'], labels: [],
   });
   assert.deepEqual(errors, []);
 });
 
-test('gateDecisionRequired blokuje zmianę w ścieżce decyzyjnej bez DECISIONS.md', () => {
+test('gateDecisionRequired blocks a change on a decision path without DECISIONS.md', () => {
   const errors = gateDecisionRequired({
     changedFiles: ['docs/specs/M01.md'], paths: ['docs/specs/**'], labels: [],
   });
@@ -1135,21 +1135,21 @@ test('gateDecisionRequired blokuje zmianę w ścieżce decyzyjnej bez DECISIONS.
   assert.match(errors[0], /no-decision/);
 });
 
-test('gateDecisionRequired przepuszcza, gdy DECISIONS.md też się zmienił', () => {
+test('gateDecisionRequired lets through when DECISIONS.md changed too', () => {
   const errors = gateDecisionRequired({
     changedFiles: ['docs/specs/M01.md', 'docs/DECISIONS.md'], paths: ['docs/specs/**'], labels: [],
   });
   assert.deepEqual(errors, []);
 });
 
-test('etykieta no-decision otwiera furtkę', () => {
+test('the no-decision label opens the back door', () => {
   const errors = gateDecisionRequired({
     changedFiles: ['docs/specs/M01.md'], paths: ['docs/specs/**'], labels: ['no-decision'],
   });
   assert.deepEqual(errors, []);
 });
 
-test('wzorzec ** dopasowuje zagnieżdżone katalogi, * nie przekracza separatora', () => {
+test('the ** pattern matches nested directories, * does not cross the separator', () => {
   assert.equal(gateDecisionRequired({
     changedFiles: ['a/b/c/pricing.ts'], paths: ['**/pricing*'], labels: [],
   }).length, 1);
@@ -1159,12 +1159,12 @@ test('wzorzec ** dopasowuje zagnieżdżone katalogi, * nie przekracza separatora
 });
 ```
 
-- [ ] **Step 2: Uruchom test, upewnij się że pada**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `node --test lib/gates.test.mjs`
 Expected: FAIL — `Cannot find module './gates.mjs'`
 
-- [ ] **Step 3: Zaimplementuj `lib/gates.mjs`**
+- [ ] **Step 3: Implement `lib/gates.mjs`**
 
 ```js
 // lib/gates.mjs
@@ -1188,8 +1188,8 @@ export function gateIndexFresh({ decisionsText, claudeMdText }) {
   const { decs } = parseDecisions(decisionsText);
   const { active, history, errors } = deriveStatus(decs);
 
-  // Przy bledach relacji indeks nie da sie sensownie porownac — zglasza je
-  // bramka integrity. Milczymy, zeby nie dokladac myllacego "indeks nieaktualny".
+  // With relation errors the index cannot be compared meaningfully — the
+  // integrity gate reports them. We stay silent so as not to pile on a misleading "index is stale".
   if (errors.length) return [];
 
   const expected = renderBlock({ active, history });
@@ -1202,14 +1202,14 @@ export function gateIndexFresh({ decisionsText, claudeMdText }) {
   }
 
   if (updated !== claudeMdText) {
-    return ['Blok WYGENEROWANE:decyzje w CLAUDE.md jest nieaktualny — uruchom `npx … index` i zacommituj wynik.'];
+    return ['The GENERATED:decisions block in CLAUDE.md is stale — run `node <kit>/bin/knowledge.mjs index` and commit the result.'];
   }
   return [];
 }
 
-// Minimalny matcher glob: ** przekracza separatory, * nie.
+// Minimal glob matcher: ** crosses separators, * does not.
 // Skanujemy znak po znaku zamiast lancucha .replace() z sentinelami —
-// sentinel zawsze da sie wpisac w dane wejsciowe i wtedy translacja klamie.
+// a sentinel can always be typed into the input data, and then the translation lies.
 const SPECIAL = new Set(['.', '+', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\', '?']);
 
 function globToRegExp(glob) {
@@ -1239,34 +1239,34 @@ export function gateDecisionRequired({ changedFiles, paths, labels }) {
   if (hits.length === 0) return [];
 
   return [
-    `PR zmienia ścieżki decyzyjne (${hits.join(', ')}), ale nie rusza ${DECISIONS_PATH}. ` +
-    'Dodaj wpis DEC albo oznacz PR etykietą `no-decision`.',
+    `The PR touches decision paths (${hits.join(', ')}) but leaves ${DECISIONS_PATH} untouched. ` +
+    'Add a DEC entry or label the PR `no-decision`.',
   ];
 }
 
 export { OPEN_MARKER, CLOSE_MARKER };
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [ ] **Step 4: Run the tests**
 
 Run: `node --test lib/gates.test.mjs`
-Expected: PASS — 10 testów
+Expected: PASS — 10 tests
 
-- [ ] **Step 5: Uruchom cały zestaw**
+- [ ] **Step 5: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS — wszystkie testy z Tasków 1-7
+Expected: PASS — every test from Tasks 1-7
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add lib/gates.mjs lib/gates.test.mjs
-git commit -m "feat: trzy bramki CI - integrity, index-fresh, decision-required"
+git commit -m "feat: three CI gates - integrity, index-fresh, decision-required"
 ```
 
 ---
 
-### Task 8: Szablony i scaffolding bez nadpisywania
+### Task 8: Templates and scaffolding without overwriting
 
 **Files:**
 - Create: `templates/DECISIONS.md`
@@ -1278,61 +1278,61 @@ git commit -m "feat: trzy bramki CI - integrity, index-fresh, decision-required"
 **Interfaces:**
 - Consumes: `OPEN_MARKER`, `CLOSE_MARKER` z `render.mjs`
 - Produces: `planInit({ existing: string[] }) → { create: {path, template}[], skip: string[], appendToClaudeMd: boolean }`
-  - Czysta funkcja planująca; zapis na dysk robi `bin/knowledge.mjs`. Dzięki temu reguła „nigdy nie nadpisuj" jest testowalna bez systemu plików.
+  - A pure planning function; writing to disk is done by `bin/knowledge.mjs`. That makes the "never overwrite" rule testable without a filesystem.
 
-- [ ] **Step 1: Utwórz `templates/DECISIONS.md`**
+- [ ] **Step 1: Create `templates/DECISIONS.md`**
 
 ````markdown
 # Decision Log
 
-Jedno źródło prawdy o decyzjach projektu. Skrót aktywnych decyzji generuje się
-z tego pliku do `CLAUDE.md` — nie edytuj go tam ręcznie.
+The single source of truth about this project's decisions. A digest of the active
+ones is generated from this file into `CLAUDE.md` — do not edit it there by hand.
 
-### Format wpisu
+### Entry format
 
-Nagłówek tej sekcji jest celowo trzeciego poziomu: każdy nagłówek `## ` w tym pliku
-musi być kompletnym wpisem DEC, inaczej bramka `integrity` odrzuca plik.
+This section's heading is deliberately third level: every `## ` heading in this file
+must be a complete DEC entry, otherwise the `integrity` gate rejects the file.
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
-**Odwraca:** DEC-XXX      (opcjonalne — XXX przestaje obowiązywać w całości)
-**Zmienia:** DEC-XXX      (opcjonalne — XXX obowiązuje dalej, ten wpis doprecyzowuje fragment)
-**Obszar:** tag, tag      (opcjonalne)
-**Scope:** w cenie        (opcjonalne — w cenie | change request | do wyceny)
-**Źródło:** Transcripts/YYYY-MM-DD-slug.md   (opcjonalne; wymagane dla decyzji klienta)
-**Temat:** jedno zdanie
-**Kontekst:** dlaczego temat w ogóle się pojawił
-**Decyzja:** co ustalono
-**Konsekwencje:** co to zmienia w kodzie, kosztach, harmonogramie
-**Podjął:** kto i gdzie
+**Reverses:** DEC-XXX     (optional — XXX stops applying entirely)
+**Changes:** DEC-XXX      (optional — XXX still applies, this entry refines part of it)
+**Area:** tag, tag      (opcjonalne)
+**Scope:** in scope        (opcjonalne — in scope | change request | needs estimate)
+**Source:** Transcripts/YYYY-MM-DD-slug.md   (optional; required for client decisions)
+**Topic:** one sentence
+**Context:** why the topic came up at all
+**Decision:** co ustalono
+**Consequences:** co to zmienia w kodzie, kosztach, harmonogramie
+**Decided by:** kto i gdzie
 ```
 
 Zasady:
 
-- Nowe wpisy dopisuj **na końcu pliku** — dzięki temu równoległe PR-y dają konflikt tekstowy zamiast cichego auto-merge.
-- Statusu się nie zapisuje. Wynika z pól `Odwraca:` i `Zmienia:` późniejszych wpisów.
-- Zmiana merytoryczna = nowy wpis. Edycja korygująca (literówka, data, dopisanie `Źródło:`) jest dozwolona w miejscu.
+- Append new entries **at the end of the file** — that way parallel PRs produce a text conflict instead of a silent auto-merge.
+- Status is never written down. It follows from the `Reverses:` and `Changes:` fields of later entries.
+- A substantive change means a new entry. A corrective edit (typo, date, adding `Source:`) is allowed in place.
 
 ---
 
 ## DEC-001 — 2026-01-01
-**Obszar:** proces
-**Temat:** Decyzje projektu żyją w tym pliku
-**Kontekst:** Wiedza rozproszona po Slacku i transkryptach nie przeżywa rotacji w zespole.
-**Decyzja:** Każda decyzja mająca wpływ na zakres, koszt lub architekturę trafia tutaj jako wpis DEC.
-**Konsekwencje:** CI blokuje PR-y w ścieżkach decyzyjnych bez wpisu. Skrót aktywnych decyzji generuje się do CLAUDE.md.
-**Podjął:** Zespół — instalacja repoBrain
+**Area:** proces
+**Topic:** Project decisions live in this file
+**Context:** Knowledge scattered across Slack and transcripts does not survive team rotation.
+**Decision:** Every decision that affects scope, cost or architecture lands here as a DEC entry.
+**Consequences:** CI blocks PRs on decision paths that carry no entry. A digest of the active decisions is generated into CLAUDE.md.
+**Decided by:** The team — repoBrain installation
 ````
 
-- [ ] **Step 2: Utwórz `templates/knowledge.yml`**
+- [ ] **Step 2: Create `templates/knowledge.yml`**
 
 ```yaml
 name: knowledge
 
 on:
   pull_request:
-    # labeled/unlabeled sa OBOWIAZKOWE: bez nich dodanie etykiety
-    # `no-decision` nie retriggeruje builda i PR zostaje czerwony.
+    # labeled/unlabeled are MANDATORY: without them, adding the
+    # `no-decision` label does not retrigger the build and the PR stays red.
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
@@ -1348,29 +1348,29 @@ jobs:
         with:
           node-version: '20'
       # Pin po pelnym SHA, nigdy po tagu - tagi gita sa mutowalne,
-      # a to jest zdalny kod wykonywany w CI z flaga --yes.
+      # and this is remote code executed in CI with the --yes flag.
       - run: npx --yes github:monterail/repobrain#<PELNY_SHA> check
              --paths 'docs/specs/**,**/pricing*'
 ```
 
-- [ ] **Step 3: Utwórz `templates/CLAUDE-section.md`**
+- [ ] **Step 3: Create `templates/CLAUDE-section.md`**
 
 ```markdown
-## Źródła prawdy
+## Sources of truth
 
-1. `docs/DECISIONS.md` — pełna treść decyzji; `Odwraca:`/`Zmienia:` rozstrzygają aktualność
-2. blok `WYGENEROWANE:decyzje` poniżej — skrót aktywnych, zawsze zgodny z (1)
+1. `docs/DECISIONS.md` — the full text of each decision; `Reverses:`/`Changes:` settle what is current
+2. the `GENERATED:decisions` block below — a digest of the active ones, always consistent with (1)
 3. `docs/specs/` — kontrakt implementacyjny
-4. `Transcripts/` — materiał dowodowy, gdy 1-3 milczą
+4. `Transcripts/` — supporting evidence, when 1-3 are silent
 
-Wszystko poza tą listą to notatki robocze, nie źródło prawdy.
+Anything outside this list is a working note, not a source of truth.
 
-<!-- WYGENEROWANE:decyzje — nie edytuj. Uruchom: npx … index -->
-_Brak aktywnych decyzji._
-<!-- /WYGENEROWANE:decyzje -->
+<!-- GENERATED:decisions — do not edit. Run: node <kit>/bin/knowledge.mjs index -->
+_No active decisions._
+<!-- /GENERATED:decisions -->
 ```
 
-- [ ] **Step 4: Napisz test, który nie przechodzi**
+- [ ] **Step 4: Write a failing test**
 
 ```js
 // lib/init.test.mjs
@@ -1378,46 +1378,46 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planInit } from './init.mjs';
 
-test('w pustym repo planuje wszystkie pliki', () => {
+test('in an empty repo it plans every file', () => {
   const plan = planInit({ existing: [] });
   const paths = plan.create.map((c) => c.path);
   assert.deepEqual(paths.sort(), ['.github/workflows/knowledge.yml', 'CLAUDE.md', 'docs/DECISIONS.md'].sort());
   assert.deepEqual(plan.skip, []);
 });
 
-test('nigdy nie nadpisuje istniejących plików', () => {
+test('it never overwrites existing files', () => {
   const plan = planInit({ existing: ['docs/DECISIONS.md'] });
   const paths = plan.create.map((c) => c.path);
   assert.ok(!paths.includes('docs/DECISIONS.md'));
   assert.deepEqual(plan.skip, ['docs/DECISIONS.md']);
 });
 
-test('istniejący CLAUDE.md jest rozszerzany, nie tworzony', () => {
+test('an existing CLAUDE.md is appended to, not created', () => {
   const plan = planInit({ existing: ['CLAUDE.md'] });
   assert.ok(!plan.create.some((c) => c.path === 'CLAUDE.md'));
   assert.equal(plan.appendToClaudeMd, true);
   assert.deepEqual(plan.skip, []);
 });
 
-test('gdy CLAUDE.md nie istnieje, jest tworzony i nie doklejany', () => {
+test('when CLAUDE.md does not exist it is created, not appended to', () => {
   const plan = planInit({ existing: [] });
   assert.ok(plan.create.some((c) => c.path === 'CLAUDE.md'));
   assert.equal(plan.appendToClaudeMd, false);
 });
 
-test('każdy wpis create ma nazwę szablonu', () => {
+test('every create entry carries a template name', () => {
   for (const c of planInit({ existing: [] }).create) {
     assert.ok(typeof c.template === 'string' && c.template.length > 0, c.path);
   }
 });
 ```
 
-- [ ] **Step 5: Uruchom test, upewnij się że pada**
+- [ ] **Step 5: Run the test, confirm it fails**
 
 Run: `node --test lib/init.test.mjs`
 Expected: FAIL — `Cannot find module './init.mjs'`
 
-- [ ] **Step 6: Zaimplementuj `lib/init.mjs`**
+- [ ] **Step 6: Implement `lib/init.mjs`**
 
 ```js
 // lib/init.mjs
@@ -1443,16 +1443,16 @@ export function planInit({ existing }) {
 }
 ```
 
-- [ ] **Step 7: Uruchom testy**
+- [ ] **Step 7: Run the tests**
 
 Run: `node --test lib/init.test.mjs`
-Expected: PASS — 5 testów
+Expected: PASS — 5 tests
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add templates lib/init.mjs lib/init.test.mjs
-git commit -m "feat: szablony i planowanie instalacji bez nadpisywania"
+git commit -m "feat: templates and installation planning without overwriting"
 ```
 
 ---
@@ -1463,16 +1463,16 @@ git commit -m "feat: szablony i planowanie instalacji bez nadpisywania"
 - Create: `bin/knowledge.mjs`
 
 **Interfaces:**
-- Consumes: wszystko z `lib/`
-- Produces: komendy `init`, `index`, `check`. Kod wyjścia `1`, gdy którakolwiek bramka zgłosi błąd.
+- Consumes: everything from `lib/`
+- Produces: the `init`, `index`, `check` commands. Exit code `1` when any gate reports an error.
 
-Jedyny moduł znający środowisko. `lib/` pozostaje czyste — to niezmiennik architektoniczny ze specu.
+The only module that knows the environment. `lib/` stays pure — that is the architectural invariant from the spec.
 
-- [ ] **Step 1: Zaimplementuj `bin/knowledge.mjs`**
+- [ ] **Step 1: Implement `bin/knowledge.mjs`**
 
 ```js
 #!/usr/bin/env node
-// bin/knowledge.mjs — jedyne miejsce, które zna system plików, argv i zmienne CI.
+// bin/knowledge.mjs — the only place that knows the filesystem, argv and CI env vars.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1513,7 +1513,7 @@ function changedFiles(event) {
 }
 
 function fail(errors) {
-  console.error(`\n✗ repoBrain — ${errors.length} ${errors.length === 1 ? 'błąd' : 'błędów'}:\n`);
+  console.error(`\n✗ repoBrain — ${errors.length} ${errors.length === 1 ? 'error' : 'errors'}:\n`);
   for (const e of errors) console.error(`  ${e}`);
   console.error('');
   process.exit(1);
@@ -1530,21 +1530,21 @@ function cmdInit() {
     writeFileSync(target, readFileSync(join(KIT_ROOT, 'templates', template), 'utf8'));
     console.log(`  + ${path}`);
   }
-  for (const path of plan.skip) console.log(`  = ${path} (istnieje, pominięto)`);
+  for (const path of plan.skip) console.log(`  = ${path} (exists, skipped)`);
 
   if (plan.appendToClaudeMd) {
     const section = readFileSync(join(KIT_ROOT, 'templates/CLAUDE-section.md'), 'utf8');
-    if (readFileSync(CLAUDE_MD, 'utf8').includes('WYGENEROWANE:decyzje')) {
-      console.log('  = CLAUDE.md (znaczniki już są, pominięto)');
+    if (readFileSync(CLAUDE_MD, 'utf8').includes('GENERATED:decisions')) {
+      console.log('  = CLAUDE.md (markers already present, skipped)');
     } else {
       appendFileSync(CLAUDE_MD, `\n${section}`);
-      console.log('  ~ CLAUDE.md (dopisano sekcję Źródła prawdy)');
+      console.log('  ~ CLAUDE.md (appended the Sources of truth section)');
     }
   }
 
-  console.log('\nDo uzupełnienia ręcznie:');
-  console.log('  1. ścieżki decyzyjne w .github/workflows/knowledge.yml');
-  console.log('  2. pełny SHA repoBrain w tym samym pliku (nigdy tag)');
+  console.log('\nStill to fill in by hand:');
+  console.log('  1. decision paths in .github/workflows/knowledge.yml');
+  console.log('  2. the full repoBrain SHA in the same file (never a tag)');
   console.log('  3. branch protection: require branches to be up to date');
 }
 
@@ -1565,7 +1565,7 @@ function cmdIndex() {
   }
 
   if (updated === claudeMd) {
-    console.log('✓ CLAUDE.md już aktualny');
+    console.log('✓ CLAUDE.md already up to date');
     return;
   }
   writeFileSync(CLAUDE_MD, updated);
@@ -1594,33 +1594,33 @@ function cmdCheck() {
   }
 
   if (errors.length) fail(errors);
-  console.log('✓ repoBrain — wszystkie bramki zielone');
+  console.log('✓ repoBrain — all gates green');
 }
 
 const COMMANDS = { init: cmdInit, index: cmdIndex, check: cmdCheck };
 const command = process.argv[2];
 
 if (!COMMANDS[command]) {
-  console.error('Użycie: repobrain <init|index|check> [--paths <globy>] [--client-names <lista>]');
+  console.error('Usage: repobrain <init|index|check> [--paths <globs>] [--client-names <list>]');
   process.exit(2);
 }
 COMMANDS[command]();
 ```
 
-- [ ] **Step 2: Nadaj prawo wykonywania i sprawdź komunikat pomocy**
+- [ ] **Step 2: Make it executable and check the help message**
 
 ```bash
 chmod +x bin/knowledge.mjs
 node bin/knowledge.mjs
 ```
-Expected: komunikat `Użycie: repobrain <init|index|check> …`, kod wyjścia 2
+Expected: the message `Usage: repobrain <init|index|check> …`, exit code 2
 
-- [ ] **Step 3: Sprawdź, że `lib/` nie zna środowiska**
+- [ ] **Step 3: Check that `lib/` knows nothing about the environment**
 
 ```bash
 grep -rnE "process\.(env|argv|cwd)|node:fs|node:child_process" lib/*.mjs | grep -v '\.test\.mjs'
 ```
-Expected: **brak wyjścia**. Jakiekolwiek trafienie łamie niezmiennik architektoniczny — przenieś ten kod do `bin/`.
+Expected: **no output**. Any hit breaks the architectural invariant — move that code into `bin/`.
 
 - [ ] **Step 4: Commit**
 
@@ -1637,12 +1637,12 @@ git commit -m "feat: CLI init, index, check"
 - Create: `test/e2e.test.mjs`
 
 **Interfaces:**
-- Consumes: `bin/knowledge.mjs` jako proces potomny
-- Produces: brak
+- Consumes: `bin/knowledge.mjs` as a child process
+- Produces: nothing
 
 Pokrywa scenariusz z §7 specu — jedyny sprawdzian „gotowe na kickoff".
 
-- [ ] **Step 1: Napisz test**
+- [ ] **Step 1: Write test**
 
 ```js
 // test/e2e.test.mjs
@@ -1670,15 +1670,15 @@ function run(cwd, args, env = {}) {
 
 const ENTRY = (n, date, extra = '') => `
 ## DEC-${String(n).padStart(3, '0')} — ${date}
-${extra}**Obszar:** proces
-**Temat:** Temat ${n}
-**Kontekst:** K
-**Decyzja:** D
-**Konsekwencje:** KO
-**Podjął:** Zespół
+${extra}**Area:** proces
+**Topic:** Topic ${n}
+**Context:** K
+**Decision:** D
+**Consequences:** KO
+**Decided by:** The team
 `;
 
-test('pełna pętla: init, index, odwrócenie, zmiana, bramki', (t) => {
+test('full loop: init, index, reversal, change, gates', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-e2e-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
@@ -1686,41 +1686,41 @@ test('pełna pętla: init, index, odwrócenie, zmiana, bramki', (t) => {
   assert.equal(run(repo, ['init']).code, 0);
   const claude = join(repo, 'CLAUDE.md');
   const decisions = join(repo, 'docs/DECISIONS.md');
-  assert.match(readFileSync(claude, 'utf8'), /WYGENEROWANE:decyzje/);
+  assert.match(readFileSync(claude, 'utf8'), /GENERATED:decisions/);
   assert.match(readFileSync(decisions, 'utf8'), /DEC-001/);
 
-  // 2. index — DEC-001 z szablonu ląduje w bloku
+  // 2. index — DEC-001 from the template lands in the block
   assert.equal(run(repo, ['index']).code, 0);
   assert.match(readFileSync(claude, 'utf8'), /DEC-001/);
 
   // 3. DEC-002 odwraca DEC-001
-  appendFileSync(decisions, ENTRY(2, '2026-02-01', '**Odwraca:** DEC-001\n'));
+  appendFileSync(decisions, ENTRY(2, '2026-02-01', '**Reverses:** DEC-001\n'));
   assert.equal(run(repo, ['index']).code, 0);
   let block = readFileSync(claude, 'utf8');
-  assert.match(block, /Odwrócone/);
-  assert.match(block, /DEC-001.*odwrócony przez DEC-002/);
+  assert.match(block, /Reversed/);
+  assert.match(block, /DEC-001.*reversed by DEC-002/);
 
-  // 4. DEC-003 zmienia DEC-002 — oba zostają aktywne
-  appendFileSync(decisions, ENTRY(3, '2026-03-01', '**Zmienia:** DEC-002\n'));
+  // 4. DEC-003 changes DEC-002 — both stay active
+  appendFileSync(decisions, ENTRY(3, '2026-03-01', '**Changes:** DEC-002\n'));
   assert.equal(run(repo, ['index']).code, 0);
   block = readFileSync(claude, 'utf8');
-  assert.match(block, /DEC-002.*zmienione przez DEC-003/);
+  assert.match(block, /DEC-002.*changed by DEC-003/);
   assert.match(block, /DEC-003/);
 
   // 5. check po regeneracji — zielone
   assert.equal(run(repo, ['check']).code, 0);
 
-  // 6. nieaktualny blok — czerwone
+  // 6. stale block — red
   appendFileSync(decisions, ENTRY(4, '2026-04-01'));
   const stale = run(repo, ['check']);
   assert.equal(stale.code, 1);
-  assert.match(stale.stderr, /nieaktualny/);
+  assert.match(stale.stderr, /stale/);
 
   assert.equal(run(repo, ['index']).code, 0);
   assert.equal(run(repo, ['check']).code, 0);
 });
 
-test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
+test('the decision-required gate blocks and yields to the label', (t) => {
   const repo = mkdtempSync(join(tmpdir(), 'repobrain-gate-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
 
@@ -1737,7 +1737,7 @@ test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
   mkdirSync(join(repo, 'docs/specs'), { recursive: true });
   writeFileSync(join(repo, 'docs/specs/M01.md'), '# Spec\n');
   execFileSync('git', ['add', '-A'], { cwd: repo });
-  execFileSync('git', ['commit', '-qm', 'spec bez decyzji'], { cwd: repo });
+  execFileSync('git', ['commit', '-qm', 'spec without a decision'], { cwd: repo });
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
 
   const eventPath = join(repo, 'event.json');
@@ -1756,15 +1756,15 @@ test('bramka decision-required blokuje i ustępuje przy etykiecie', (t) => {
 });
 ```
 
-- [ ] **Step 2: Uruchom test**
+- [ ] **Step 2: Run the test**
 
 Run: `node --test test/e2e.test.mjs`
 Expected: PASS — 2 testy
 
-- [ ] **Step 3: Uruchom cały zestaw**
+- [ ] **Step 3: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS — wszystkie testy jednostkowe + e2e
+Expected: PASS — every unit test + e2e
 
 - [ ] **Step 4: Commit**
 
@@ -1786,19 +1786,19 @@ git commit -m "test: pelna petla e2e w katalogu tymczasowym"
 
 **Interfaces:**
 - Consumes: CLI z Task 9
-- Produces: brak API dla kodu
+- Produces: no API for code
 
-- [ ] **Step 1: Utwórz manifest**
+- [ ] **Step 1: Create the manifest**
 
 ```json
 {
   "name": "repobrain",
   "version": "0.1.0",
-  "description": "Warstwa wiedzy w repo: DECISIONS.md jako zrodlo prawdy, skrot generowany do CLAUDE.md, egzekwowanie w CI"
+  "description": "A knowledge layer inside the repo: DECISIONS.md as the source of truth, a digest generated into CLAUDE.md, enforced in CI"
 }
 ```
 
-- [ ] **Step 2: Utwórz skill formatu decyzji**
+- [ ] **Step 2: Create the decision-format skill**
 
 ````markdown
 ---
@@ -1806,57 +1806,57 @@ name: decisions-format
 description: Use when writing or editing an entry in docs/DECISIONS.md, when recording a project decision, or when a decision changes or reverses an earlier one. Defines the DEC entry format that repoBrain's CI gates validate.
 ---
 
-# Format wpisu DEC
+# DEC entry format
 
-Wpisy żyją w `docs/DECISIONS.md`. Bramka CI `integrity` odrzuca każdy nagłówek `## `,
-który nie jest kompletnym wpisem — nie ma cichego pomijania.
+Entries live in `docs/DECISIONS.md`. The `integrity` CI gate rejects every `## ` heading
+that is not a complete entry — nothing is skipped silently.
 
-## Szablon
+## Template
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
-**Odwraca:** DEC-XXX
-**Zmienia:** DEC-XXX
-**Obszar:** tag, tag
-**Scope:** w cenie
-**Źródło:** Transcripts/YYYY-MM-DD-slug.md
-**Temat:** jedno zdanie
-**Kontekst:** dlaczego temat się pojawił
-**Decyzja:** co ustalono
-**Konsekwencje:** co to zmienia w kodzie, kosztach, harmonogramie
-**Podjął:** kto i gdzie
+**Reverses:** DEC-XXX
+**Changes:** DEC-XXX
+**Area:** tag, tag
+**Scope:** in scope
+**Source:** Transcripts/YYYY-MM-DD-slug.md
+**Topic:** one sentence
+**Context:** why the topic came up
+**Decision:** co ustalono
+**Consequences:** co to zmienia w kodzie, kosztach, harmonogramie
+**Decided by:** kto i gdzie
 ```
 
-## Reguły twarde
+## Hard rules
 
-- Wymagane: `Temat`, `Kontekst`, `Decyzja`, `Konsekwencje`, `Podjął`.
-- Data ściśle `YYYY-MM-DD` z zerami wiodącymi. Separator `-`, `–` lub `—`.
-- `Scope:` przyjmuje wyłącznie `w cenie`, `change request`, `do wyceny`.
-- **Nigdy nie dopisuj pola `Status:`** — status wynika z relacji i jest wyliczany.
-- Nowy wpis dopisuj **na końcu pliku**.
-- Nigdy nie edytuj bloku `WYGENEROWANE:decyzje` w `CLAUDE.md`. Uruchom `npx … index`.
+- Wymagane: `Topic`, `Context`, `Decision`, `Consequences`, `Decided by`.
+- The date is strictly `YYYY-MM-DD` with leading zeros. Separator `-`, `–` or `—`.
+- `Scope:` accepts only `in scope`, `change request`, `needs estimate`.
+- **Never add a `Status:` field** — status follows from the relations and is derived.
+- Append a new entry **at the end of the file**.
+- Never edit the `GENERATED:decisions` block in `CLAUDE.md`. Run `node <kit>/bin/knowledge.mjs index`.
 
-## Którą relację wybrać
+## Which relation to pick
 
-| Sytuacja | Pole |
+| Situation | Field |
 |---|---|
-| Poprzednia decyzja przestaje obowiązywać w całości | `Odwraca:` |
-| Poprzednia obowiązuje dalej, doprecyzowujesz fragment | `Zmienia:` |
-| Temat niezwiązany z żadną wcześniejszą | żadne |
+| The previous decision stops applying entirely | `Reverses:` |
+| The previous one still applies, you are refining part of it | `Changes:` |
+| A topic unrelated to any earlier one | neither |
 
-Wpis nie może deklarować obu relacji naraz. Relacja musi wskazywać na wpis wcześniejszy
+An entry may not declare both relations at once. The relation must point at an earlier
 wg pary (data, numer ID).
 
-Przy wątpliwości między `Odwraca:` a `Zmienia:` zadaj pytanie: *czy po tej zmianie
-ktokolwiek nadal działa według starego wpisu?* Jeśli tak — `Zmienia:`.
+When torn between `Reverses:` and `Changes:`, ask: *after this change, is anyone still
+operating under the old entry?* If yes — `Changes:`.
 
 ## Po edycji
 
-Uruchom `npx … index` i zacommituj `CLAUDE.md` razem z `DECISIONS.md`. Bez tego
-bramka `index-fresh` zablokuje merge.
+Run `node <kit>/bin/knowledge.mjs index` and commit `CLAUDE.md` together with `DECISIONS.md`. Without that
+the `index-fresh` gate blocks the merge.
 ````
 
-- [ ] **Step 3: Utwórz skill audytu**
+- [ ] **Step 3: Create the audit skill**
 
 ````markdown
 ---
@@ -1866,26 +1866,26 @@ description: Use when asked to audit the repo's knowledge layer, check for docum
 
 # Audyt warstwy wiedzy
 
-Bramki CI łapią pojedyncze zdarzenia. Ten audyt łapie dryf systemowy — rzeczy,
-których blokowanie dałoby fałszywe alarmy.
+CI gates catch single events. This audit catches systemic drift — the things that would
+produce false alarms if you blocked on them.
 
 ## Zakres
 
-**1. Zgubione decyzje.** Dla każdego `Transcripts/*.md` z sekcją „Key Decisions"
-sprawdź, czy istnieje wpis DEC z `Źródło:` wskazującym na ten plik. Brak = ostrzeżenie,
-nie błąd — nie każda decyzja z callu zasługuje na wpis.
+**1. Lost decisions.** For every `Transcripts/*.md` with a "Key Decisions" section,
+check whether a DEC entry exists whose `Source:` points at that file. Missing = a warning,
+not an error — not every decision from a call deserves an entry.
 
-**2. Użycia furtki.** Policz PR-y z etykietą `no-decision` z ostatnich 30 dni:
+**2. Back door usage.** Count PRs labelled `no-decision` from the last 30 days:
 
 ```bash
 gh pr list --label no-decision --state all --limit 100 \
   --json number,title,mergedAt,author
 ```
 
-Rosnąca liczba oznacza, że ścieżki decyzyjne są za szerokie albo bramka jest obchodzona.
-Zaraportuj liczbę i listę — to jedyna obrona przed cichym znormalizowaniem furtki.
+A rising count means the decision paths are too broad or the gate is being worked around.
+Report the count and the list — this is the only defence against the back door being quietly normalised.
 
-**3. Dokumenty bez odsyłaczy.** Pliki w `docs/`, do których nic w repo nie linkuje:
+**3. Unreferenced documents.** Files in `docs/` that nothing in the repo links to:
 
 ```bash
 git ls-files 'docs/*' | grep -E '\.(md|html)$' | while read -r f; do
@@ -1894,175 +1894,175 @@ git ls-files 'docs/*' | grep -E '\.(md|html)$' | while read -r f; do
 done
 ```
 
-Raportuj listę do przejrzenia. Nie proponuj hurtowego kasowania — część to legalne archiwum.
+Report the list for review. Do not propose deleting them wholesale — some are a legitimate archive.
 
-**4. Martwe linki wewnętrzne.** Odsyłacze w `docs/`, które się nie rozwiązują.
-Świadomie poza bramką CI: część to ścieżki względne rozwiązywane z innych katalogów,
-więc blokowanie dawałoby fałszywe alarmy.
+**4. Dead internal links.** References inside `docs/` that do not resolve.
+Deliberately outside the CI gate: some are relative paths resolved from other directories,
+so blocking on them would produce false alarms.
 
 ## Format raportu
 
-Sekcje wyżej, każde znalezisko z ustaloną wagą (`błąd` / `ostrzeżenie` / `do przejrzenia`)
-i konkretną ścieżką. Bez propozycji zmian, dopóki użytkownik o nie nie poprosi.
+The sections above, each finding with an assigned severity (`error` / `warning` / `review`)
+and a concrete path. No proposed changes until the user asks for them.
 ````
 
-- [ ] **Step 4: Utwórz komendę instalacji**
+- [ ] **Step 4: Create the installation command**
 
 ```markdown
 ---
-description: Zainstaluj repoBrain w bieżącym repo — DECISIONS.md, workflow CI, sekcja w CLAUDE.md
+description: Install repoBrain in the current repo — DECISIONS.md, CI workflow, CLAUDE.md section
 allowed-tools: Bash, Read, Edit
 ---
 
-Zainstaluj repoBrain w tym repozytorium.
+Install repoBrain in this repository.
 
-## Krok 1 — uruchom instalator
+## Step 1 — run the installer
 
 ```bash
 npx --yes github:monterail/repobrain init
 ```
 
-Instalator nigdy nie nadpisuje istniejących plików. Raportuje, co dołożył (`+`),
-a co pominął (`=`).
+The installer never overwrites existing files. It reports what it added (`+`)
+and what it skipped (`=`).
 
-## Krok 2 — uzupełnij to, czego instalator nie mógł zgadnąć
+## Step 2 — fill in what the installer could not guess
 
-1. **Ścieżki decyzyjne** w `.github/workflows/knowledge.yml`. Zacznij wąsko —
-   `docs/specs/**` i pliki cenowe. Nie dodawaj katalogu migracji na starcie: większość
-   migracji nie ma za sobą decyzji klienckiej, a złapanie ich zamieni etykietę
-   `no-decision` w odruch.
-2. **Pełny SHA** repoBrain w tym samym pliku. Nigdy tag — tagi gita są mutowalne,
-   a to zdalny kod wykonywany w CI.
-3. **Branch protection**: „require branches to be up to date before merging". Bez tego
-   dwa PR-y mogą dodać ten sam numer DEC i auto-zmergować się, psując `main`.
+1. **Decision paths** in `.github/workflows/knowledge.yml`. Start narrow —
+   `docs/specs/**` and pricing files. Do not add the migrations directory on day one: most
+   migrations have no client decision behind them, and catching them turns the
+   `no-decision` label into a reflex.
+2. **The full SHA** of repoBrain in the same file. Never a tag — git tags are mutable,
+   and this is remote code executed in CI.
+3. **Branch protection**: "require branches to be up to date before merging". Without it
+   two PRs can add the same DEC number and auto-merge, breaking `main`.
 
-## Krok 3 — pierwsza generacja
+## Step 3 — first generation
 
 ```bash
 npx --yes github:monterail/repobrain index
 ```
 
-Zacommituj `docs/DECISIONS.md` i `CLAUDE.md` razem.
+Commit `docs/DECISIONS.md` and `CLAUDE.md` together.
 
-## Krok 4 — zaraportuj użytkownikowi
+## Step 4 — report back to the user
 
-Co powstało, co zostało pominięte i które z trzech uzupełnień z kroku 2 nadal czekają.
+What was created, what was skipped, and which of the three items from step 2 are still pending.
 ```
 
-- [ ] **Step 5: Utwórz komendę ekstrakcji transkryptu**
+- [ ] **Step 5: Create the transcript-extraction command**
 
 ````markdown
 ---
-description: Wyciągnij z transkryptu decyzje, niepewności i zadania; rozwieź je do właściwych miejsc
-argument-hint: <ścieżka do transkryptu>
+description: Extract decisions, uncertainties and tasks from a transcript; route them to the right places
+argument-hint: <path to transcript>
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Przetwórz transkrypt: **$ARGUMENTS**
+Process the transcript: **$ARGUMENTS**
 
-## Krok 1 — przeczytaj i podsumuj
+## Step 1 — read and summarise
 
-Zapisz podsumowanie do `Transcripts/YYYY-MM-DD-slug.md` (datę weź z nazwy pliku
-lub treści). Katalog utwórz, jeśli nie istnieje. Szablon:
+Write the summary to `Transcripts/YYYY-MM-DD-slug.md` (take the date from the file name
+or the content). Create the directory if it does not exist. Template:
 
 ```markdown
-# Podsumowanie — [data] — [temat]
+# Summary — [date] — [topic]
 
-**Typ:** klient / wewnętrzne / discovery / vendor
-**Uczestnicy:** …
-**Język:** PL / EN
+**Type:** client / internal / discovery / vendor
+**Participants:** …
+**Language:** PL / EN
 
-## Kontekst
-[1-2 zdania: po co było to spotkanie]
+## Context
+[1-2 sentences: why this meeting happened]
 
-## Decyzje
-| # | Decyzja | Kto | Uwagi |
-|---|---------|-----|-------|
+## Decisions
+| # | Decision | Who | Notes |
+|---|----------|-----|-------|
 
-## Zadania
-| Zadanie | Kto | Termin | Priorytet |
-|---------|-----|--------|-----------|
+## Tasks
+| Task | Who | Due | Priority |
+|------|-----|-----|----------|
 
-## Otwarte pytania
+## Open questions
 - …
 
-## Cytaty
-> "[dokładny cytat]" — [kto]
+## Quotes
+> "[exact quote]" — [who]
 ```
 
-Nie zmyślaj. Cokolwiek niejasne oznacz `[verify]` i zgłoś użytkownikowi —
-bramka `integrity` odrzuci `[verify]`, który zostanie w `DECISIONS.md`.
+Do not invent anything. Mark whatever is unclear with `[verify]` and report it to the user —
+the `integrity` gate rejects a `[verify]` left in `DECISIONS.md`.
 
-## Krok 2 — sklasyfikuj według trwałości
+## Step 2 — classify by lifespan
 
-Kryterium routingu to **cykl życia pozycji**, nie jej typ. Decyzja obowiązuje,
-aż ktoś ją odwróci; zadanie umiera po wykonaniu.
+The routing criterion is an item's **lifecycle**, not its type. A decision holds
+until someone reverses it; a task dies once it is done.
 
-| Typ | Cel |
+| Type | Destination |
 |---|---|
-| Decyzja | draft wpisu DEC → `docs/DECISIONS.md` |
-| Niepewność, założenie | `HYPOTHESES.md` |
-| Zadanie | lista do wklejenia w Jirę — **nie do repo** |
-| Cytat | zostaje w podsumowaniu jako dowód |
+| Decision | a DEC entry draft → `docs/DECISIONS.md` |
+| Uncertainty, assumption | `HYPOTHESES.md` |
+| Task | a list to paste into Jira — **not into the repo** |
+| Quote | stays in the summary as evidence |
 
-Zadania nie trafiają do repo: jako listy TODO w `docs/` nikt ich nie zamyka.
+Tasks do not go into the repo: as TODO lists in `docs/` nobody ever closes them.
 
-## Krok 3 — przygotuj drafty wpisów DEC
+## Step 3 — prepare DEC entry drafts
 
-Format wg skilla `decisions-format`. W każdym drafcie ustaw `Źródło:` na plik
-podsumowania z kroku 1. Gdy decyzję podjął klient, `Źródło:` jest wymagane.
-Ustaw `Scope:`, jeśli z rozmowy wynika, czy rzecz jest w cenie.
+Follow the format from the `decisions-format` skill. In every draft set `Source:` to the
+summary file from step 1. When the client made the decision, `Source:` is required.
+Set `Scope:` if the conversation makes clear whether the thing is in scope.
 
-Jeśli decyzja modyfikuje wcześniejszą — dobierz `Odwraca:` albo `Zmienia:` wg pytania:
-*czy ktokolwiek nadal działa według starego wpisu?*
+If a decision modifies an earlier one, pick `Reverses:` or `Changes:` by asking:
+*is anyone still operating under the old entry?*
 
-## Krok 4 — pokaż i poczekaj
+## Step 4 — show and wait
 
-**Nie zapisuj niczego poza podsumowaniem z kroku 1 bez zgody użytkownika.**
-Pokaż drafty, zapytaj, które zastosować. Po akceptacji dopisz je na końcu
-`docs/DECISIONS.md`, uruchom `npx --yes github:monterail/repobrain index`
-i pokaż, co się zmieniło.
+**Do not save anything beyond the step 1 summary without the user's consent.**
+Show the drafts, ask which to apply. Once approved, append them to the end of
+`docs/DECISIONS.md`, run `npx --yes github:monterail/repobrain index`
+and show what changed.
 ````
 
-- [ ] **Step 6: Sprawdź poprawność JSON i uruchom pełny zestaw**
+- [ ] **Step 6: Validate the JSON and run the full suite**
 
 ```bash
 node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json','utf8')); console.log('plugin.json OK')"
 npm test
 ```
-Expected: `plugin.json OK` + wszystkie testy przechodzą
+Expected: `plugin.json OK` + every test passes
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add .claude-plugin
-git commit -m "feat: plugin Claude Code - skille formatu i audytu, komendy init i transcript-extract"
+git commit -m "feat: Claude Code plugin - format and audit skills, init and transcript-extract commands"
 ```
 
 ---
 
-## Kolejność i zależności
+## Order and dependencies
 
 ```
-Task 1 (parser) ──► Task 2 (twardy błąd nagłówka)
+Task 1 (parser) ──► Task 2 (hard heading error)
        │
-       ├──► Task 3 (derywacja) ──► Task 4 (walidacja relacji)
+       ├──► Task 3 (derivation) ──► Task 4 (relation validation)
        │                                    │
        ├──► Task 5 (render) ────────────────┤
        │                                    ▼
-       ├──► Task 6 (integralność) ──► Task 7 (bramki) ──► Task 9 (CLI) ──► Task 10 (e2e)
+       ├──► Task 6 (integrity) ──► Task 7 (gates) ──► Task 9 (CLI) ──► Task 10 (e2e)
        │                                                        ▲
-       └──► Task 8 (szablony, init) ────────────────────────────┘
+       └──► Task 8 (templates, init) ─────────────────────────────┘
                                                                  
 Task 11 (plugin) — po Task 9
 ```
 
-Taski 5, 6 i 8 są niezależne od siebie i mogą powstać równolegle.
+Tasks 5, 6 and 8 are independent of each other and can be built in parallel.
 
 ## Definition of done
 
-- [ ] `npm test` zielone — wszystkie testy jednostkowe i e2e
-- [ ] `grep -rnE "process\.(env|argv|cwd)|node:fs|node:child_process" lib/*.mjs` (bez testów) nie zwraca nic
-- [ ] `npx --yes github:<org>/repobrain#<SHA> check` działa w świeżym klonie
-- [ ] `package.json` nadal bez `dependencies` i `devDependencies`
+- [ ] `npm test` green — every unit test and e2e
+- [ ] `grep -rnE "process\.(env|argv|cwd)|node:fs|node:child_process" lib/*.mjs` (excluding tests) returns nothing
+- [ ] `npx --yes github:<org>/repobrain#<SHA> check` works in a fresh clone
+- [ ] `package.json` still has no `dependencies` and no `devDependencies`
 - [ ] Anonimizacja `docs/design/` przed upublicznieniem repo (patrz README)
