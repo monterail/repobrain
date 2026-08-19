@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// bin/knowledge.mjs — jedyne miejsce, które zna system plików, argv i zmienne CI.
+// bin/knowledge.mjs — the only place that knows the filesystem, argv and CI env vars.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,24 +22,24 @@ function flag(name, fallback = null) {
 
   // Check if next argument is missing or is another flag
   if (i + 1 >= process.argv.length) {
-    fail([`Flaga --${name} wymaga wartości.`]);
+    fail([`Flag --${name} requires a value.`]);
   }
   const value = process.argv[i + 1];
   if (value.startsWith('--')) {
-    fail([`Flaga --${name} wymaga wartości (podana kolejna flaga: ${value}).`]);
+    fail([`Flag --${name} requires a value (got another flag: ${value}).`]);
   }
 
   // Check for duplicate flags
   if (process.argv.indexOf(`--${name}`, i + 1) !== -1) {
-    fail([`Flaga --${name} podana wielokrotnie. Użyj tylko raz.`]);
+    fail([`Flag --${name} given more than once. Use it only once.`]);
   }
 
   return value;
 }
 
-// Odrzuca flagi, ktorych dana komenda nie zna (np. literowka --pahts zamiast
-// --paths) — bez tego nierozpoznana flaga jest po cichu ignorowana i bramka,
-// ktora mialaby jej uzyc, nigdy realnie nie biegnie, mimo "wszystko zielone".
+// Rejects flags a command does not know (e.g. the typo --pahts instead of
+// --paths) — without this an unrecognised flag is silently ignored and the gate
+// that was meant to use it never really runs, despite "everything green".
 function validateFlags(allowed) {
   const known = new Set(allowed);
   const unknown = [];
@@ -48,9 +48,9 @@ function validateFlags(allowed) {
     if (arg.startsWith('--') && !known.has(arg.slice(2))) unknown.push(arg);
   }
   if (unknown.length) {
-    const allowedList = allowed.length ? allowed.map((a) => `--${a}`).join(', ') : '(brak flag dla tej komendy)';
+    const allowedList = allowed.length ? allowed.map((a) => `--${a}`).join(', ') : '(this command takes no flags)';
     fail([
-      `Nieznana flaga: ${unknown.join(', ')}.\nDostępne dla \`${process.argv[2]}\`: ${allowedList}.`,
+      `Unknown flag: ${unknown.join(', ')}.\nAvailable for \`${process.argv[2]}\`: ${allowedList}.`,
     ]);
   }
 }
@@ -60,14 +60,14 @@ function readEvent() {
   if (!p) return null;  // Env var not set — no CI context, OK to skip
 
   if (!existsSync(p)) {
-    fail([`GITHUB_EVENT_PATH wskazuje na nieistniejący plik: ${p}`]);
+    fail([`GITHUB_EVENT_PATH points at a missing file: ${p}`]);
   }
 
   let event;
   try {
     event = JSON.parse(readFileSync(p, 'utf8'));
   } catch (err) {
-    fail([`Nie udało się sparsować GITHUB_EVENT_PATH (${p}): ${err.message}`]);
+    fail([`Failed to parse GITHUB_EVENT_PATH (${p}): ${err.message}`]);
   }
 
   return event;
@@ -91,7 +91,7 @@ function changedFiles(event) {
     if (stderr) {
       const lines = stderr.split('\n').filter(line => line.trim());
       if (lines.length > 2) {
-        stderr = lines.slice(0, 2).join('\n') + '\n    (wyjście git skrócone)';
+        stderr = lines.slice(0, 2).join('\n') + '\n    (git output truncated)';
       } else {
         stderr = lines.join('\n');
       }
@@ -99,13 +99,13 @@ function changedFiles(event) {
 
     const gitMsg = stderr ? `git: ${stderr}` : err.message;
     fail([
-      `Nie udało się ustalić listy zmienionych plików dla zakresu ${base}...${head}.\n${gitMsg}\n\nTypowe przyczyny:\n  - brak \`fetch-depth: 0\` w kroku actions/checkout\n  - commit bazowy nie istnieje w repozytorium (np. po force push)`,
+      `Failed to determine the list of changed files for range ${base}...${head}.\n${gitMsg}\n\nUsual causes:\n  - missing \`fetch-depth: 0\` in the actions/checkout step\n  - the base commit is absent from the repository (e.g. after a force push)`,
     ]);
   }
 }
 
 function fail(errors) {
-  console.error(`\n✗ repoBrain — ${errors.length} ${errors.length === 1 ? 'błąd' : 'błędów'}:\n`);
+  console.error(`\n✗ repoBrain — ${errors.length} ${errors.length === 1 ? 'error' : 'errors'}:\n`);
   for (const e of errors) {
     for (const line of e.split('\n')) {
       console.error(`  ${line}`);
@@ -132,54 +132,54 @@ function cmdInit() {
     }
   } catch (err) {
     const lines = [
-      'Błąd podczas tworzenia plików (instalacja niepełna):',
+      'Error while creating files (installation incomplete):',
       err.message,
       '',
-      'Powstały już:',
+      'Already created:',
     ];
     for (const p of created) lines.push(`  - ${p}`);
     lines.push('');
-    lines.push('Posprzątaj ręcznie i spróbuj ponownie.');
+    lines.push('Clean up manually and try again.');
     fail([lines.join('\n')]);
   }
 
-  for (const path of plan.skip) console.log(`  = ${path} (istnieje, pominięto)`);
+  for (const path of plan.skip) console.log(`  = ${path} (exists, skipped)`);
 
   if (plan.appendToClaudeMd) {
     try {
       const section = readFileSync(join(KIT_ROOT, 'templates/CLAUDE-section.md'), 'utf8');
       if (readFileSync(CLAUDE_MD, 'utf8').includes(OPEN_MARKER)) {
-        console.log('  = CLAUDE.md (znaczniki już są, pominięto)');
+        console.log('  = CLAUDE.md (markers already present, skipped)');
       } else {
         appendFileSync(CLAUDE_MD, `\n${section}`);
-        console.log('  ~ CLAUDE.md (dopisano sekcję Źródła prawdy)');
+        console.log('  ~ CLAUDE.md (appended the Sources of truth section)');
       }
     } catch (err) {
       fail([
-        `Błąd podczas pracy z CLAUDE.md:\n${err.message}\n\nWymagane pliki powstały. Dopisz sekcję ręcznie lub spróbuj ponownie.`,
+        `Error while working with CLAUDE.md:\n${err.message}\n\nThe required files were created. Append the section manually or try again.`,
       ]);
     }
   }
 
-  console.log('\nDo uzupełnienia ręcznie:');
-  console.log('  1. ścieżki decyzyjne w .github/workflows/knowledge.yml');
-  console.log('  2. pełny SHA repoBrain w tym samym pliku (nigdy tag)');
+  console.log('\nStill to fill in by hand:');
+  console.log('  1. decision paths in .github/workflows/knowledge.yml');
+  console.log('  2. the full repoBrain SHA in the same file (never a tag)');
   console.log('  3. branch protection: require branches to be up to date');
-  console.log('  4. nazwiska klienta w --client-names w tym samym pliku —');
-  console.log('     bez tego bramka integrity nigdy nie wymaga pola Źródło dla decyzji klienta');
+  console.log('  4. client names in --client-names in the same file —');
+  console.log('     without them the integrity gate never requires Source on a client decision');
 }
 
 function cmdIndex() {
   validateFlags([]);
   if (!existsSync(DECISIONS)) {
     fail([
-      `${DECISIONS} nie istnieje. Uruchom \`repobrain init\`, żeby go utworzyć.`,
+      `${DECISIONS} does not exist. Run \`repobrain init\` to create it.`,
     ]);
   }
 
   if (!existsSync(CLAUDE_MD)) {
     fail([
-      `${CLAUDE_MD} nie istnieje. Uruchom \`repobrain init\`, żeby go utworzyć.`,
+      `${CLAUDE_MD} does not exist. Run \`repobrain init\` to create it.`,
     ]);
   }
 
@@ -199,11 +199,11 @@ function cmdIndex() {
   }
 
   if (updated === claudeMd) {
-    console.log('✓ CLAUDE.md już aktualny');
+    console.log('✓ CLAUDE.md already up to date');
     return;
   }
   writeFileSync(CLAUDE_MD, updated);
-  console.log(`✓ CLAUDE.md zaktualizowany — ${active.length} aktywnych, ${history.length} w historii`);
+  console.log(`✓ CLAUDE.md updated — ${active.length} active, ${history.length} in history`);
 }
 
 function cmdCheck() {
@@ -211,13 +211,13 @@ function cmdCheck() {
 
   if (!existsSync(DECISIONS)) {
     fail([
-      `${DECISIONS} nie istnieje. Uruchom \`repobrain init\`, żeby go utworzyć.`,
+      `${DECISIONS} does not exist. Run \`repobrain init\` to create it.`,
     ]);
   }
 
   if (!existsSync(CLAUDE_MD)) {
     fail([
-      `${CLAUDE_MD} nie istnieje. Uruchom \`repobrain init\`, żeby go utworzyć.`,
+      `${CLAUDE_MD} does not exist. Run \`repobrain init\` to create it.`,
     ]);
   }
 
@@ -225,19 +225,18 @@ function cmdCheck() {
   const clientNamesRaw = flag('client-names');
   const pathsArg = flag('paths', '');
 
-  // Placeholder z templates/knowledge.yml (np. '<nazwiska klienta po przecinku,
-  // np. Kowalski, Nowak>') niepodmieniony przez operatora nie moze udawac
-  // skonfigurowanej listy nazwisk — inaczej reguła jest cicho wylaczona bez
-  // ostrzezenia. Heurystyka: '<' i '>' razem w wartosci nigdy nie wystapia
-  // w prawdziwym nazwisku.
+  // A placeholder from templates/knowledge.yml (e.g. '<comma-separated client
+  // names, e.g. Smith, Jones>') left unreplaced by the operator must not pose as
+  // a configured list of names — otherwise the rule is silently disabled with no
+  // warning. Heuristic: '<' and '>' together never occur in a real surname.
   const isUnfilledPlaceholder = (v) => v != null && v.includes('<') && v.includes('>');
   const clientNames = isUnfilledPlaceholder(clientNamesRaw) ? null : clientNamesRaw;
 
   if (!clientNames) {
     const reason = isUnfilledPlaceholder(clientNamesRaw)
-      ? ' — --client-names zawiera niepodmieniony placeholder z konfiguracji (templates/knowledge.yml), traktowany jak brak flagi.'
-      : ' — brak --client-names.';
-    console.log(`ℹ reguła „decyzja klienta wymaga pola Źródło" jest wyłączona${reason}`);
+      ? ' — --client-names still holds the unreplaced placeholder from the config (templates/knowledge.yml), treated as no flag at all.'
+      : ' — no --client-names.';
+    console.log(`ℹ the "a client decision requires the Source field" rule is disabled${reason}`);
   }
 
   const decisionsText = readFileSync(DECISIONS, 'utf8');
@@ -259,9 +258,9 @@ function cmdCheck() {
   const paths = (pathsArg || '').split(',').map((s) => s.trim()).filter(Boolean);
 
   if (!files) {
-    skippedGates.push('decision-required (brak kontekstu PR)');
+    skippedGates.push('decision-required (no PR context)');
   } else if (paths.length === 0) {
-    skippedGates.push('decision-required (brak --paths — żadna ścieżka nie jest chroniona)');
+    skippedGates.push('decision-required (no --paths — no path is protected)');
   } else {
     errors.push(...gateDecisionRequired({
       changedFiles: files,
@@ -273,15 +272,15 @@ function cmdCheck() {
 
   if (errors.length) fail(errors);
 
-  const skippedNote = skippedGates.length ? ` (pominięte: ${skippedGates.join('; ')})` : '';
-  console.log(`✓ repoBrain — bramki zielone: ${ranGates.join(', ')}${skippedNote}`);
+  const skippedNote = skippedGates.length ? ` (skipped: ${skippedGates.join('; ')})` : '';
+  console.log(`✓ repoBrain — gates green: ${ranGates.join(', ')}${skippedNote}`);
 }
 
 const COMMANDS = { init: cmdInit, index: cmdIndex, check: cmdCheck };
 const command = process.argv[2];
 
 if (!COMMANDS[command]) {
-  console.error('Użycie: repobrain <init|index|check> [--paths <globy>] [--client-names <lista>]');
+  console.error('Usage: repobrain <init|index|check> [--paths <globs>] [--client-names <list>]');
   process.exit(2);
 }
 COMMANDS[command]();

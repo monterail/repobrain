@@ -1,54 +1,54 @@
 # Decision Log
 
-Jedno źródło prawdy o decyzjach projektu. Skrót aktywnych decyzji generuje się
-z tego pliku do `CLAUDE.md` — nie edytuj go tam ręcznie.
+The single source of truth about this project's decisions. A digest of the active
+ones is generated from this file into `CLAUDE.md` — do not edit it there by hand.
 
-### Format wpisu
+### Entry format
 
-Nagłówek tej sekcji jest celowo trzeciego poziomu: każdy nagłówek `## ` w tym pliku
-musi być kompletnym wpisem DEC, inaczej bramka `integrity` odrzuca plik.
+This section's heading is deliberately third level: every `## ` heading in this file
+must be a complete DEC entry, otherwise the `integrity` gate rejects the file.
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
-**Odwraca:** DEC-XXX      (opcjonalne — XXX przestaje obowiązywać w całości)
-**Zmienia:** DEC-XXX      (opcjonalne — XXX obowiązuje dalej, ten wpis doprecyzowuje fragment)
-**Obszar:** tag, tag      (opcjonalne)
-**Scope:** w cenie        (opcjonalne — w cenie | change request | do wyceny)
-**Źródło:** Transcripts/YYYY-MM-DD-slug.md   (opcjonalne; wymagane dla decyzji klienta)
-**Temat:** jedno zdanie
-**Kontekst:** dlaczego temat w ogóle się pojawił
-**Decyzja:** co ustalono
-**Konsekwencje:** co to zmienia w kodzie, kosztach, harmonogramie
-**Podjął:** kto i gdzie
+**Reverses:** DEC-XXX     (optional — XXX stops applying entirely)
+**Changes:** DEC-XXX      (optional — XXX still applies, this entry refines part of it)
+**Area:** tag, tag        (optional)
+**Scope:** in scope       (optional — in scope | change request | needs estimate)
+**Source:** Transcripts/YYYY-MM-DD-slug.md   (optional; required for client decisions)
+**Topic:** one sentence
+**Context:** why the topic came up at all
+**Decision:** what was agreed
+**Consequences:** what this changes in code, cost, schedule
+**Decided by:** who and where
 ```
 
-**Ograniczenia relacji:**
+**Relation constraints:**
 
-- `Odwraca:` i `Zmienia:` **się wzajemnie wykluczają** — wpis może mieć co najwyżej jedną z tych relacji, nigdy obie naraz. Jeśli zmiana dotyczy dwóch wcześniejszych decyzji, potrzebne są dwa wpisy.
-- Cel relacji (zarówno `Odwraca:` jak i `Zmienia:`) musi wskazywać na **wcześniejszy wpis** (wcześniejsza data, lub przy równej dacie — mniejszy numer ID).
+- `Reverses:` and `Changes:` are **mutually exclusive** — an entry may carry at most one of these relations, never both at once. If a change concerns two earlier decisions, you need two entries.
+- The target of a relation (both `Reverses:` and `Changes:`) must point at an **earlier entry** (earlier date, or — on equal dates — a lower ID number).
 
-**Placeholdery blokujące CI:**
+**Placeholders that block CI:**
 
-Poniższe ciągi blokują cały plik. Nie używaj ich jako świadomych znaczników roboczych:
+The strings below block the whole file. Do not use them as deliberate working markers:
 
 ```
-[data]   [uzupełnij]   [TBD]   [verify]   TODO
+[date]   [fill in]   [TBD]   [verify]   TODO
 ```
 
-Jeśli w momencie tworzenia wpisu czegoś jeszcze nie wiadomo, lepiej nie commitować wpisu wcale niż commitować niepełny.
+If something is still unknown when you write the entry, it is better not to commit the entry at all than to commit an incomplete one.
 
-Zasady:
+Rules:
 
-- Nowe wpisy dopisuj **na końcu pliku** — dzięki temu równoległe PR-y dają konflikt tekstowy zamiast cichego auto-merge.
-- Statusu się nie zapisuje. Wynika z pól `Odwraca:` i `Zmienia:` późniejszych wpisów.
-- Zmiana merytoryczna = nowy wpis. Edycja korygująca (literówka, data, dopisanie `Źródło:`) jest dozwolona w miejscu.
+- Append new entries **at the end of the file** — that way parallel PRs produce a text conflict instead of a silent auto-merge.
+- Status is never written down. It follows from the `Reverses:` and `Changes:` fields of later entries.
+- A substantive change means a new entry. A corrective edit (typo, date, adding `Source:`) is allowed in place.
 
 ---
 
 ## DEC-001 — 2026-01-01
-**Obszar:** proces
-**Temat:** Decyzje projektu żyją w tym pliku
-**Kontekst:** Wiedza rozproszona po Slacku i transkryptach nie przeżywa rotacji w zespole.
-**Decyzja:** Każda decyzja mająca wpływ na zakres, koszt lub architekturę trafia tutaj jako wpis DEC.
-**Konsekwencje:** CI blokuje PR-y w ścieżkach decyzyjnych bez wpisu. Skrót aktywnych decyzji generuje się do CLAUDE.md.
-**Podjął:** Zespół — instalacja repoBrain
+**Area:** process
+**Topic:** Project decisions live in this file
+**Context:** Knowledge scattered across Slack and transcripts does not survive team rotation.
+**Decision:** Every decision that affects scope, cost or architecture lands here as a DEC entry.
+**Consequences:** CI blocks PRs on decision paths that carry no entry. A digest of the active decisions is generated into CLAUDE.md.
+**Decided by:** The team — repoBrain installation

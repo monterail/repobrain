@@ -3,61 +3,61 @@ name: decisions-format
 description: Use when writing or editing an entry in docs/DECISIONS.md, when recording a project decision, or when a decision changes or reverses an earlier one. Defines the DEC entry format that repoBrain's CI gates validate.
 ---
 
-# Format wpisu DEC
+# DEC entry format
 
-Wpisy żyją w `docs/DECISIONS.md`. Bramka CI `integrity` odrzuca każdy nagłówek `## `,
-który nie jest kompletnym wpisem — nie ma cichego pomijania.
+Entries live in `docs/DECISIONS.md`. The `integrity` CI gate rejects every `## ` heading
+that is not a complete entry — nothing is skipped silently.
 
-## Szablon
+## Template
 
 ```markdown
 ## DEC-NNN — YYYY-MM-DD
-**Odwraca:** DEC-XXX      (opcjonalne — XXX przestaje obowiązywać w całości)
-**Zmienia:** DEC-XXX      (opcjonalne — XXX obowiązuje dalej, ten wpis doprecyzowuje fragment)
-**Obszar:** tag, tag      (opcjonalne)
-**Scope:** w cenie        (opcjonalne — w cenie | change request | do wyceny)
-**Źródło:** Transcripts/YYYY-MM-DD-slug.md   (opcjonalne; wymagane dla decyzji klienta)
-**Temat:** jedno zdanie
-**Kontekst:** dlaczego temat się pojawił
-**Decyzja:** co ustalono
-**Konsekwencje:** co to zmienia w kodzie, kosztach, harmonogramie
-**Podjął:** kto i gdzie
+**Reverses:** DEC-XXX     (optional — XXX stops applying entirely)
+**Changes:** DEC-XXX      (optional — XXX still applies, this entry refines part of it)
+**Area:** tag, tag        (optional)
+**Scope:** in scope       (optional — in scope | change request | needs estimate)
+**Source:** Transcripts/YYYY-MM-DD-slug.md   (optional; required for client decisions)
+**Topic:** one sentence
+**Context:** why the topic came up
+**Decision:** what was agreed
+**Consequences:** what this changes in code, cost, schedule
+**Decided by:** who and where
 ```
 
-## Reguły twarde
+## Hard rules
 
-- Wymagane pola: `Temat`, `Kontekst`, `Decyzja`, `Konsekwencje`, `Podjął`.
-- Data ściśle `YYYY-MM-DD` z zerami wiodącymi. Separator `-`, `–` lub `—`.
-- `Scope:` przyjmuje wyłącznie `w cenie`, `change request`, `do wyceny`.
-- **Nigdy nie dopisuj pola `Status:`** — status wynika z relacji i jest wyliczany.
-- Nowy wpis dopisuj **na końcu pliku**.
-- Nigdy nie edytuj bloku `WYGENEROWANE:decyzje` w `CLAUDE.md`. Uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index`.
+- Required fields: `Topic`, `Context`, `Decision`, `Consequences`, `Decided by`.
+- The date is strictly `YYYY-MM-DD` with leading zeros. Separator `-`, `–` or `—`.
+- `Scope:` accepts only `in scope`, `change request`, `needs estimate`.
+- **Never add a `Status:` field** — status follows from the relations and is derived.
+- Append a new entry **at the end of the file**.
+- Never edit the `GENERATED:decisions` block in `CLAUDE.md`. Run `node <PATH_TO_KIT>/bin/knowledge.mjs index`.
 
-## Placeholdery blokujące CI
+## Placeholders that block CI
 
-Poniższe ciągi blokują cały plik. Nie używaj ich jako świadomych znaczników roboczych:
+The strings below block the whole file. Do not use them as deliberate working markers:
 
 ```
-[data]   [uzupełnij]   [TBD]   [verify]   TODO
+[date]   [fill in]   [TBD]   [verify]   TODO
 ```
 
-Jeśli w momencie tworzenia wpisu czegoś jeszcze nie wiadomo, lepiej nie commitować wpisu wcale niż commitować niepełny.
+If something is still unknown when you write the entry, it is better not to commit the entry at all than to commit an incomplete one.
 
-## Którą relację wybrać
+## Which relation to pick
 
-| Sytuacja | Pole |
+| Situation | Field |
 |---|---|
-| Poprzednia decyzja przestaje obowiązywać w całości | `Odwraca:` |
-| Poprzednia obowiązuje dalej, doprecyzowujesz fragment | `Zmienia:` |
-| Temat niezwiązany z żadną wcześniejszą | żadne |
+| The previous decision stops applying entirely | `Reverses:` |
+| The previous one still applies, you are refining part of it | `Changes:` |
+| A topic unrelated to any earlier one | neither |
 
-Wpis nie może deklarować obu relacji naraz. Relacja musi wskazywać na wpis wcześniejszy
-wg pary (data, numer ID).
+An entry may not declare both relations at once. The relation must point at an earlier
+entry by the (date, ID number) pair.
 
-Przy wątpliwości między `Odwraca:` a `Zmienia:` zadaj pytanie: *czy po tej zmianie
-ktokolwiek nadal działa według starego wpisu?* Jeśli tak — `Zmienia:`.
+When torn between `Reverses:` and `Changes:`, ask: *after this change, is anyone still
+operating under the old entry?* If yes — `Changes:`.
 
-## Po edycji
+## After editing
 
-Uruchom `node <SCIEZKA_DO_KITU>/bin/knowledge.mjs index` i zacommituj `CLAUDE.md` razem z `DECISIONS.md`. Bez tego
-bramka `index-fresh` zablokuje merge.
+Run `node <PATH_TO_KIT>/bin/knowledge.mjs index` and commit `CLAUDE.md` together with `DECISIONS.md`. Without that
+the `index-fresh` gate blocks the merge.
